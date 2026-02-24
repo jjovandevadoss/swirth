@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration - Lab Interface</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --text-color: #334155;
+            --text-muted: #64748b;
+            --primary-color: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success-color: #10b981;
+            --danger-color: #ef4444;
+            --warning-color: #f59e0b;
+            --border-color: #e2e8f0;
+            --card-bg: #ffffff;
+            --header-height: 60px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background-color: var(--card-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 2rem;
+            height: var(--header-height);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+
+        .brand {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .brand i { color: var(--primary-color); }
+
+        nav { display: flex; gap: 2rem; }
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.9rem;
+            transition: color 0.15s;
+            padding: 0.5rem 0;
+            border-bottom: 2px solid transparent;
+        }
+        nav a:hover { color: var(--primary-color); }
+        nav a.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+
+        main {
+            flex: 1;
+            padding: 2rem;
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .settings-card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            background: #f8fafc;
+        }
+        .card-header h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-color); display: flex; align-items: center; gap: 0.5rem; }
+        .card-body { padding: 1.5rem; }
+
+        .form-section { margin-bottom: 2rem; }
+        .form-section:last-child { margin-bottom: 0; }
+        .section-title { font-size: 0.95rem; font-weight: 600; color: var(--text-color); margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+        .section-title i { color: var(--primary-color); width: 16px; text-align: center; }
+
+        .form-row { display: flex; gap: 1rem; margin-bottom: 1.25rem; }
+        .form-col { flex: 1; }
+        .form-col.small { flex: 0 0 120px; }
+
+        .form-label { display: block; margin-bottom: 0.4rem; font-weight: 500; font-size: 0.9rem; color: var(--text-color); }
+        .form-control, .form-select { 
+            width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--border-color); 
+            border-radius: 6px; font-size: 0.95rem; transition: border-color 0.15s; 
+            font-family: inherit; background-color: #fff;
+        }
+        .form-control:focus, .form-select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+        
+        .form-hint { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; display: block; }
+        
+        .info-box { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 1rem; margin-top: 1rem; font-size: 0.9rem; color: #0369a1; }
+        .info-box strong { font-weight: 600; display: block; margin-bottom: 0.5rem; }
+        .info-box ul { margin: 0 0 0 1.5rem; padding: 0; }
+        .info-box li { margin-bottom: 0.25rem; }
+        .info-span { font-family: monospace; background: rgba(255,255,255,0.5); padding: 0 4px; border-radius: 3px; }
+
+        .actions { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+        
+        .btn {
+            background: var(--primary-color); color: white; border: none; padding: 0.75rem 1.5rem; 
+            border-radius: 6px; font-weight: 500; cursor: pointer; display: inline-flex; 
+            align-items: center; gap: 0.5rem; transition: all 0.15s; font-size: 0.95rem;
+        }
+        .btn:hover { background: var(--primary-hover); transform: translateY(-1px); }
+        .btn:active { transform: translateY(0); }
+        
+        .btn-secondary { background: white; color: var(--text-color); border: 1px solid var(--border-color); }
+        .btn-secondary:hover { background: #f8fafc; border-color: #cbd5e1; }
+        
+        .btn-danger { background: white; color: var(--danger-color); border: 1px solid var(--danger-color); }
+        .btn-danger:hover { background: #fef2f2; }
+
+        /* Notification */
+        #notification-area { position: fixed; bottom: 2rem; right: 2rem; z-index: 200; }
+        .toast {
+            background: white; border-left: 4px solid var(--primary-color);
+            padding: 1rem 1.5rem; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            margin-top: 0.5rem; animation: slideIn 0.3s ease; display: flex; align-items: center; gap: 0.75rem;
+        }
+        .toast.success { border-color: var(--success-color); }
+        .toast.error { border-color: var(--danger-color); }
+        .toast.warning { border-color: var(--warning-color); }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="brand">
+            <i class="fas fa-network-wired"></i>
+            <span>Interface Manager</span>
+        </div>
+        <nav>
+            <a href="/">Dashboard</a>
+            <a href="/settings" class="active">Configuration</a>
+        </nav>
+    </header>
+
+    <main>
+        <div class="settings-card">
+            <div class="card-header">
+                <h2><i class="fas fa-sliders-h"></i> System Configuration</h2>
+            </div>
+            <div class="card-body">
+                <form id="settingsForm">
+                    <!-- Listeners -->
+                    <div class="form-section">
+                        <div class="section-title"><i class="fas fa-server"></i> Listener Settings</div>
+                        
+                        <div class="form-row">
+                            <div class="form-col">
+                                <label class="form-label">HTTP Host</label>
+                                <input type="text" class="form-control" name="host" id="host" required>
+                                <span class="form-hint">Address to bind the web server to</span>
+                            </div>
+                            <div class="form-col small">
+                                <label class="form-label">Port</label>
+                                <input type="number" class="form-control" name="port" id="port" min="1024" max="65535" required>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-col">
+                                <label class="form-label">MLLP Host (HL7)</label>
+                                <input type="text" class="form-control" name="mllp_host" id="mllp_host" required>
+                                <span class="form-hint">Address for TCP/IP MLLP listener</span>
+                            </div>
+                            <div class="form-col small">
+                                <label class="form-label">Port</label>
+                                <input type="number" class="form-control" name="mllp_port" id="mllp_port" min="1024" max="65535" required>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-col">
+                                <label class="form-label">ASTM Host</label>
+                                <input type="text" class="form-control" name="astm_host" id="astm_host" required>
+                                <span class="form-hint">Address for raw TCP/IP listener</span>
+                            </div>
+                            <div class="form-col small">
+                                <label class="form-label">Port</label>
+                                <input type="number" class="form-control" name="astm_port" id="astm_port" min="1024" max="65535" required>
+                            </div>
+                        </div>
+
+                        <div class="info-box">
+                            <strong><i class="fas fa-info-circle"></i> Connection Information</strong>
+                            <ul>
+                                <li>HTTP Endpoint: <span class="info-span">http://<span id="currentHost">...</span>:<span id="currentPort">...</span>/hl7/receive</span></li>
+                                <li>MLLP Service: <span class="info-span"><span id="currentMllpHost">...</span>:<span id="currentMllpPort">...</span></span></li>
+                                <li>ASTM Service: <span class="info-span"><span id="currentAstmHost">...</span>:<span id="currentAstmPort">...</span></span></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <hr style="border:0; border-top:1px solid #f1f5f9; margin:2rem 0;">
+
+                    <!-- API Forwarding -->
+                    <div class="form-section">
+                        <div class="section-title"><i class="fas fa-paper-plane"></i> Forwarding Destination</div>
+                        <div class="form-col" style="margin-bottom: 1rem;">
+                            <label class="form-label">Target API URL</label>
+                            <input type="url" class="form-control" name="api_url" id="api_url" required>
+                            <span class="form-hint">Where parsed JSON data should be POSTed</span>
+                        </div>
+                         <div class="form-row">
+                            <div class="form-col">
+                                <label class="form-label">API Key</label>
+                                <input type="password" class="form-control" name="api_key" id="api_key" placeholder="Optional bearer token">
+                            </div>
+                            <div class="form-col small">
+                                <label class="form-label">Timeout (s)</label>
+                                <input type="number" class="form-control" name="api_timeout" id="api_timeout" min="1" max="300" value="30">
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr style="border:0; border-top:1px solid #f1f5f9; margin:2rem 0;">
+
+                    <!-- System -->
+                    <div class="form-section">
+                        <div class="section-title"><i class="fas fa-cogs"></i> System Controls</div>
+                        <div class="form-row">
+                            <div class="form-col">
+                                <label class="form-label">Debug Mode</label>
+                                <select class="form-select" name="debug" id="debug">
+                                    <option value="True">Enabled</option>
+                                    <option value="False">Disabled</option>
+                                </select>
+                            </div>
+                            <div class="form-col">
+                                <label class="form-label">Log Level</label>
+                                <select class="form-select" name="log_level" id="log_level">
+                                    <option value="DEBUG">DEBUG</option>
+                                    <option value="INFO">INFO</option>
+                                    <option value="WARNING">WARNING</option>
+                                    <option value="ERROR">ERROR</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="actions">
+                        <button type="button" class="btn btn-danger" onclick="restartApp()">
+                            <i class="fas fa-power-off"></i> Restart App
+                        </button>
+                        <div style="display:flex; gap:1rem;">
+                            <button type="button" class="btn btn-secondary" onclick="loadSettings()">
+                                Reset
+                            </button>
+                            <button type="button" class="btn" onclick="saveSettings()">
+                                <i class="fas fa-save"></i> Save Configuration
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <div id="notification-area"></div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        function showToast(msg, type = 'success') {
+            const icon = type === 'success' ? 'check-circle' : type === 'warning' ? 'exclamation-triangle' : 'exclamation-circle';
+            const toast = $(`<div class="toast ${type}"><i class="fas fa-${icon}"></i> <span>${msg}</span></div>`);
+            $('#notification-area').append(toast);
+            setTimeout(() => toast.fadeOut(300, () => toast.remove()), 4000);
+        }
+
+        function loadSettings() {
+            $.get('/api/config', function(config) {
+                if(!config) return;
+                
+                $('#host').val(config.HOST || '0.0.0.0');
+                $('#port').val(config.PORT || 5001);
+                $('#mllp_host').val(config.MLLP_HOST || '0.0.0.0');
+                $('#mllp_port').val(config.MLLP_PORT || 6000);
+                $('#astm_host').val(config.ASTM_HOST || '0.0.0.0');
+                $('#astm_port').val(config.ASTM_PORT || 7000);
+                
+                $('#api_url').val(config.API_URL || '');
+                $('#api_key').val(config.API_KEY || '');
+                $('#api_timeout').val(config.API_TIMEOUT || 30);
+                
+                $('#debug').val(String(config.DEBUG));
+                $('#log_level').val(config.LOG_LEVEL || 'INFO');
+
+                updateInfo(config);
+            }).fail(() => showToast('Failed to load settings', 'error'));
+        }
+
+        function updateInfo(config) {
+            $('#currentHost').text(config.HOST);
+            $('#currentPort').text(config.PORT);
+            $('#currentMllpHost').text(config.MLLP_HOST);
+            $('#currentMllpPort').text(config.MLLP_PORT);
+            $('#currentAstmHost').text(config.ASTM_HOST);
+            $('#currentAstmPort').text(config.ASTM_PORT);
+        }
+
+        function saveSettings() {
+            const data = {
+                HOST: $('#host').val(),
+                PORT: parseInt($('#port').val()),
+                MLLP_HOST: $('#mllp_host').val(),
+                MLLP_PORT: parseInt($('#mllp_port').val()),
+                ASTM_HOST: $('#astm_host').val(),
+                ASTM_PORT: parseInt($('#astm_port').val()),
+                API_URL: $('#api_url').val(),
+                API_KEY: $('#api_key').val(),
+                API_TIMEOUT: parseInt($('#api_timeout').val()),
+                DEBUG: $('#debug').val(),
+                LOG_LEVEL: $('#log_level').val()
+            };
+
+            $.ajax({
+                url: '/api/config',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: (resp) => {
+                    if(resp.requires_restart) {
+                        showToast('Saved. Restart required for network changes', 'warning');
+                    } else {
+                        showToast('Settings saved successfully');
+                    }
+                    updateInfo(data);
+                },
+                error: (xhr) => showToast('Save failed: ' + xhr.statusText, 'error')
+            });
+        }
+
+        function restartApp() {
+            if(!confirm('Restart the application?')) return;
+            $.post('/api/restart', () => {
+                showToast('Restarting... Page will reload.', 'warning');
+                setTimeout(() => location.reload(), 3000);
+            }).fail(() => showToast('Restart trigger failed', 'error'));
+        }
+
+        $(document).ready(loadSettings);
+    </script>
+</body>
+</html>

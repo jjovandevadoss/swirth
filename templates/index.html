@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lab Interface Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/jquery.json-viewer@1.5.0/json-viewer/jquery.json-viewer.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --text-color: #334155;
+            --text-muted: #64748b;
+            --primary-color: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --danger-color: #ef4444;
+            --border-color: #e2e8f0;
+            --card-bg: #ffffff;
+            --header-height: 60px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Layout */
+        header {
+            background-color: var(--card-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 2rem;
+            height: var(--header-height);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+
+        .brand {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .brand i { color: var(--primary-color); }
+
+        nav { display: flex; gap: 2rem; }
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.9rem;
+            transition: color 0.15s;
+            padding: 0.5rem 0;
+            border-bottom: 2px solid transparent;
+        }
+        nav a:hover { color: var(--primary-color); }
+        nav a.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+
+        main {
+            flex: 1;
+            padding: 2rem;
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            overflow-y: hidden; /* Changed from auto to hidden to let inner containers scroll */
+        }
+
+        /* Cards */
+        .card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-header {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+            font-size: 0.95rem;
+            background: #f8fafc;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 8px 8px 0 0;
+        }
+
+        /* Status Grid */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 1rem;
+            flex-shrink: 0; /* Keep this fixed height */
+        }
+
+        .stat-box {
+            background: var(--card-bg);
+            padding: 1.25rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .stat-box span { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+        .stat-box h3 { font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem; color: var(--text-color); }
+        .stat-box.highlight h3 { color: var(--primary-color); }
+        .stat-box.success h3 { color: var(--success-color); }
+        .stat-box.danger h3 { color: var(--danger-color); }
+
+        /* Viewer Layout */
+        .viewer-container {
+            display: flex;
+            flex: 1;
+            gap: 1.5rem;
+            min-height: 0; /* Important for nested flex scroll */
+            padding-bottom: 1rem;
+        }
+
+        .list-pane { flex: 0 0 350px; display: flex; flex-direction: column; min-height: 0; }
+        .detail-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+        .message-list {
+            flex: 1;
+            overflow-y: auto;
+            border-top: none;
+            background: #fff;
+            border-radius: 0 0 8px 8px;
+        }
+
+        .message-item {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background 0.1s;
+            border-left: 3px solid transparent;
+        }
+        .message-item:hover { background: #f1f5f9; }
+        .message-item.active { background: #eff6ff; border-left-color: var(--primary-color); }
+
+        .msg-top { display: flex; justify-content: space-between; margin-bottom: 0.4rem; align-items: center; }
+        .msg-type { font-weight: 600; font-size: 0.95rem; color: var(--text-color); }
+        .msg-time { font-size: 0.8rem; color: var(--text-muted); }
+        
+        .msg-btm { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: var(--text-muted); }
+        
+        .status-badge {
+            display: inline-flex; align-items: center; gap: 0.3rem;
+            padding: 0.2rem 0.6rem; border-radius: 4px; font-weight: 500; font-size: 0.75rem;
+        }
+        .status-badge.delivered { background: #dcfce7; color: #15803d; }
+        .status-badge.failed { background: #fee2e2; color: #b91c1c; }
+        .status-badge.pending { background: #fef3c7; color: #b45309; }
+
+        .proto-tag {
+            font-size: 0.7rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: #e2e8f0; color: #475569;
+        }
+        .proto-tag.HL7 { background: #dbeafe; color: #1e40af; }
+        .proto-tag.ASTM { background: #f3e8ff; color: #6b21a8; }
+
+        .json-viewer-container {
+            padding: 1.5rem;
+            background: #fff;
+            flex: 1;
+            overflow: auto;
+            border-radius: 0 0 8px 8px;
+            display: none;
+        }
+        .json-viewer-container.active { display: block; }
+        
+        .raw-message-container {
+            padding: 1.5rem;
+            background: #fff;
+            flex: 1;
+            overflow: auto;
+            border-radius: 0 0 8px 8px;
+            display: none;
+        }
+        .raw-message-container.active { display: block; }
+        .raw-message-container pre {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.85rem;
+            background: #f8fafc;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 1rem;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.5;
+            color: #334155;
+            margin: 0;
+        }
+        
+        /* Modal */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.4);
+            backdrop-filter: blur(2px);
+            z-index: 100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal {
+            background: white; width: 90%; max-width: 600px; max-height: 90vh;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            display: flex; flex-direction: column;
+        }
+        .modal-body { padding: 1.5rem; overflow-y: auto; }
+        .modal-footer { padding: 1rem 1.5rem; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 0.75rem; background: #f8fafc; border-radius: 0 0 12px 12px; }
+
+        .btn {
+            border: 1px solid var(--border-color);
+            background: white;
+            color: var(--text-color);
+            padding: 0.6rem 1rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn:hover { background: #f8fafc; border-color: #cbd5e1; }
+        .btn-primary { background: var(--primary-color); color: white; border-color: var(--primary-color); }
+        .btn-primary:hover { background: var(--primary-hover); }
+        
+        .form-label { display: block; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem; }
+        .form-control { width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 6px; font-family: inherit; font-size: 0.9rem; }
+        .form-control:focus { outline: 2px solid var(--primary-color); border-color: transparent; }
+        textarea.form-control { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.85rem; background: #f8fafc; }
+
+        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+        .tab-btn { flex: 1; padding: 0.6rem; border: 1px solid var(--border-color); background: white; border-radius: 6px; cursor: pointer; font-weight: 500; color: var(--text-muted); }
+        .tab-btn.active { background: #eff6ff; color: var(--primary-color); border-color: var(--primary-color); }
+
+        /* Notification */
+        #notification-area { position: fixed; bottom: 2rem; right: 2rem; z-index: 200; }
+        .toast {
+            background: white; border-left: 4px solid var(--primary-color);
+            padding: 1rem 1.5rem; border-radius: 4px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-top: 0.5rem; animation: slideIn 0.3s ease; display: flex; align-items: center; gap: 0.75rem;
+        }
+        .toast.success { border-color: var(--success-color); }
+        .toast.error { border-color: var(--danger-color); }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="brand">
+            <i class="fas fa-network-wired"></i>
+            <span>Interface Manager</span>
+        </div>
+        <nav>
+            <a href="/" class="active">Dashboard</a>
+            <a href="/settings">Configuration</a>
+            <a href="#" onclick="openModal()">Tools</a>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Top Stats -->
+        <div class="status-grid">
+            <div class="stat-box">
+                <span>Total Messages</span>
+                <h3 id="stat-total">-</h3>
+            </div>
+            <div class="stat-box">
+                <span>HL7</span>
+                <h3 id="stat-hl7">-</h3>
+            </div>
+            <div class="stat-box">
+                <span>ASTM</span>
+                <h3 id="stat-astm">-</h3>
+            </div>
+            <div class="stat-box success">
+                <span>Delivered</span>
+                <h3 id="stat-delivered">-</h3>
+            </div>
+            <div class="stat-box danger">
+                <span>Failed</span>
+                <h3 id="stat-failed">-</h3>
+            </div>
+            <div class="stat-box highlight">
+                <span>Systems</span>
+                <div style="margin-top:0.5rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+                    <span class="status-badge delivered" title="HTTP Listener"><i class="fas fa-globe"></i> {{ http_port }}</span>
+                    <span class="status-badge delivered" title="MLLP Listener"><i class="fas fa-server"></i> {{ mllp_port }}</span>
+                    <span class="status-badge delivered" title="ASTM Listener"><i class="fas fa-flask"></i> 7000</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="viewer-container">
+            <!-- Left Pane -->
+            <div class="card list-pane">
+                <div class="card-header">
+                    <span>Recent Activity</span>
+                    <span style="font-size: 0.8rem; color: var(--text-muted);">Real-time</span>
+                </div>
+                <div class="message-list" id="messageList">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Right Pane -->
+            <div class="card detail-pane">
+                <div class="card-header">
+                    <span>Message Inspector</span>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="tab-btn active" onclick="switchInspectorTab('parsed', this)">Parsed Data</button>
+                        <button class="tab-btn" onclick="switchInspectorTab('raw', this)">Raw Message</button>
+                    </div>
+                </div>
+                <div id="json-renderer" class="json-viewer-container active"></div>
+                <div id="raw-renderer" class="raw-message-container"><pre id="raw-message-content">Select a message to view its raw content</pre></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="simulatorModal">
+        <div class="modal">
+            <div class="card-header">
+                <span>Test Message Sender</span>
+                <button class="btn" style="border:none; padding:0; color:var(--text-muted);" onclick="closeModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="tabs">
+                    <button class="tab-btn active" onclick="setProtocol('hl7', this)">HL7 Protocol</button>
+                    <button class="tab-btn" onclick="setProtocol('astm', this)">ASTM Protocol</button>
+                    <input type="hidden" id="protocolInput" value="hl7">
+                </div>
+
+                <div id="hl7-section">
+                    <label class="form-label">HL7 Message</label>
+                    <textarea class="form-control" id="hl7Message" rows="8">MSH|^~\&|LAB_SYSTEM|HOSPITAL_LAB|APP|RECEIVING_APP|20260219120000||ORU^R01|MSG12345|P|2.5
+PID|1||PATIENT123||DOE^JOHN^A||19800515|M|||123 MAIN ST^^CITY^STATE^12345||555-1234|||S||ACCOUNT456
+OBR|1||ORDER789|CBC^Complete Blood Count^L|||20260219113000
+OBX|1|NM|WBC^White Blood Cell Count^L||7.5|10*3/uL|4.5-11.0|N|||F|||20260219113000</textarea>
+                </div>
+
+                <div id="astm-section" style="display:none;">
+                    <label class="form-label">ASTM Message</label>
+                    <textarea class="form-control" id="astmMessage" rows="8">H|\^&|||ANALYZER|||20260219120000||
+P|1||PATIENT123||DOE^JOHN||19800515|M
+O|1|ORDER789|SPEC001|CBC|||20260219113000
+R|1|WBC|7.5|10*3/uL|4.5-11.0|N|1||F|||20260219113000|LAB1
+L|1|</textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="sendMessage()">Send Message</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification-area"></div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery.json-viewer@1.5.0/json-viewer/jquery.json-viewer.js"></script>
+    <script>
+        const API = {
+            history: '/api/history',
+            sendHL7: '/hl7/receive',
+            sendASTM: '/astm/receive'
+        };
+
+        // UI Helpers
+        function showToast(msg, type = 'success') {
+            const icon = type === 'success' ? 'check-circle' : 'exclamation-triangle';
+            const toast = $(`<div class="toast ${type}"><i class="fas fa-${icon}"></i> <span>${msg}</span></div>`);
+            $('#notification-area').append(toast);
+            setTimeout(() => toast.fadeOut(300, () => toast.remove()), 3000);
+        }
+
+        function openModal() { $('#simulatorModal').css('display', 'flex').hide().fadeIn(200); }
+        function closeModal() { $('#simulatorModal').fadeOut(200); }
+
+        function setProtocol(proto, btn) {
+            $('#protocolInput').val(proto);
+            $('.tab-btn').removeClass('active');
+            $(btn).addClass('active');
+            
+            if(proto === 'hl7') { $('#hl7-section').show(); $('#astm-section').hide(); }
+            else { $('#hl7-section').hide(); $('#astm-section').show(); }
+        }
+
+        // --- Core Logic ---
+        // We use a global state to track messages
+        let state = {
+            messages: [],
+            selectedIndex: null
+        };
+
+        function renderStats() {
+            if (!state.messages.length) return;
+            const counts = state.messages.reduce((acc, m) => {
+                acc.total++;
+                if (m.protocol === 'HL7') acc.hl7++;
+                if (m.protocol === 'ASTM') acc.astm++;
+                if (m.delivery_status === 'delivered') acc.delivered++;
+                if (m.delivery_status === 'failed') acc.failed++;
+                return acc;
+            }, { total: 0, hl7: 0, astm: 0, delivered: 0, failed: 0 });
+
+            $('#stat-total').text(counts.total);
+            $('#stat-hl7').text(counts.hl7);
+            $('#stat-astm').text(counts.astm);
+            $('#stat-delivered').text(counts.delivered);
+            $('#stat-failed').text(counts.failed);
+        }
+
+        function renderList() {
+            const list = $('#messageList');
+            list.empty();
+            
+            if (state.messages.length === 0) {
+                list.html('<div style="padding:2rem; text-align:center; color:var(--text-muted);">No messages yet</div>');
+                return;
+            }
+
+            // Messages are typically newest last from API? Or newest first? 
+            // Usually DB returns ordered by ID. Let's assume we want newest at top.
+            // Let's copy and reverse for display
+            const displayMessages = [...state.messages].reverse();
+
+            displayMessages.forEach((msg, idx) => {
+                // Determine original index in the main array
+                const originalIdx = state.messages.indexOf(msg); 
+                const time = new Date(msg.created_at || msg.timestamp).toLocaleTimeString();
+                const type = msg.parsed_data?.message_type || msg.message_type || 'Unknown';
+                
+                let statusBadge = '';
+                if(msg.delivery_status === 'delivered') statusBadge = '<span class="status-badge delivered"><i class="fas fa-check"></i> Delivered</span>';
+                else if(msg.delivery_status === 'failed') statusBadge = '<span class="status-badge failed"><i class="fas fa-times"></i> Failed</span>';
+                else statusBadge = '<span class="status-badge pending"><i class="fas fa-clock"></i> Pending</span>';
+
+                const isActive = (originalIdx === state.selectedIndex) ? 'active' : '';
+
+                const item = $(`
+                    <div class="message-item ${isActive}" onclick="selectMessage(${originalIdx})">
+                        <div class="msg-top">
+                            <span class="proto-tag ${msg.protocol}">${msg.protocol}</span>
+                            <span class="msg-time">${time}</span>
+                        </div>
+                        <div class="msg-type">${type}</div>
+                        <div class="msg-btm" style="margin-top:0.4rem;">
+                            <span>${msg.source_ip}</span>
+                            ${statusBadge}
+                        </div>
+                    </div>
+                `);
+                list.append(item);
+            });
+        }
+
+        function selectMessage(index) {
+            state.selectedIndex = index;
+            // Update UI selection
+            $('.message-item').removeClass('active');
+            // We need to find the element that corresponds to this index.
+            // Since we render reversed, it's tricky to just use eq(). 
+            // Let's just re-render list to keep it simple, or improved logic.
+            // Re-rendering is safe.
+            renderList();
+            
+            const msg = state.messages[index];
+            if(!msg) return;
+
+            // Update parsed data view
+            $('#json-renderer').jsonViewer(msg.parsed_data || {}, { collapsed: false, withQuotes: true });
+            
+            // Update raw message view
+            const rawMsg = msg.raw_message || 'No raw message available';
+            $('#raw-message-content').text(rawMsg);
+        }
+        
+        function switchInspectorTab(tab, btn) {
+            // Update button states
+            $(btn).siblings('.tab-btn').removeClass('active');
+            $(btn).addClass('active');
+            
+            // Show appropriate content
+            if (tab === 'parsed') {
+                $('#json-renderer').addClass('active').show();
+                $('#raw-renderer').removeClass('active').hide();
+            } else {
+                $('#json-renderer').removeClass('active').hide();
+                $('#raw-renderer').addClass('active').show();
+            }
+        }
+
+        function fetchData() {
+            $.get(API.history, (data) => {
+                const newData = data || [];
+                // Simple equality check to avoid re-rendering if no change
+                if(JSON.stringify(newData) !== JSON.stringify(state.messages)) {
+                    
+                    const wasEmpty = state.messages.length === 0;
+                    const oldLength = state.messages.length;
+                    
+                    state.messages = newData;
+                    
+                    // If this is the first load, or we have new messages and we want to auto-select the newest
+                    if (wasEmpty && state.messages.length > 0) {
+                        // Select the last one (newest)
+                        selectMessage(state.messages.length - 1);
+                    } else if (state.messages.length > oldLength) {
+                        // New message arrived?
+                        // If user was at the top (newest), maybe auto select? 
+                        // For now, let's just update the list but keep selection if valid
+                        renderStats();
+                        renderList();
+                    } else {
+                        renderStats();
+                        renderList();
+                    }
+                }
+            });
+        }
+
+        function sendMessage() {
+            const proto = $('#protocolInput').val();
+            const payload = proto === 'hl7' ? $('#hl7Message').val() : $('#astmMessage').val();
+            const url = proto === 'hl7' ? API.sendHL7 : API.sendASTM;
+
+            if(!payload.trim()) { showToast('Message cannot be empty', 'error'); return; }
+
+            $.ajax({
+                url: url,
+                type: 'POST',
+                data: payload,
+                contentType: 'text/plain',
+                success: () => {
+                    showToast('Message sent successfully');
+                    setTimeout(fetchData, 500);
+                },
+                error: (xhr) => {
+                    showToast('Failed to send: ' + xhr.statusText, 'error');
+                }
+            });
+        }
+
+        // Init
+        fetchData();
+        setInterval(fetchData, 2000);
+        
+        // Modal Overlay Click
+        $('#simulatorModal').on('click', function(e) {
+             if(e.target === this) closeModal();
+        });
+    </script>
+</body>
+</html>
