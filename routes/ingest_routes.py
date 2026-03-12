@@ -1,4 +1,8 @@
 from flask import Blueprint, jsonify, request
+import logging
+import time
+
+logger = logging.getLogger(__name__)
 
 
 def create_ingest_blueprint(ingest_service):
@@ -6,25 +10,40 @@ def create_ingest_blueprint(ingest_service):
 
     @ingest_bp.route("/hl7/receive", methods=["POST"])
     def receive_hl7():
+        start_time = time.time()
         source_ip = request.headers.get("X-Original-Source-IP", request.remote_addr)
+        content_type = request.headers.get("Content-Type", "unknown")
+        content_length = request.headers.get("Content-Length", "0")
+        
+        logger.info(f"[HTTP] POST /hl7/receive from {source_ip} | {content_type} | {content_length} bytes")
 
         if request.is_json:
             data = request.get_json(silent=True) or {}
             hl7_message = data.get("message", "")
+            logger.debug(f"[HTTP] Received JSON payload with 'message' key")
         elif request.form:
             hl7_message = request.form.get("message", "")
+            logger.debug(f"[HTTP] Received form-encoded payload")
         else:
             hl7_message = request.data.decode("utf-8", errors="ignore")
+            logger.debug(f"[HTTP] Received raw text body")
 
         if not hl7_message:
+            logger.warning(f"[HTTP] Empty HL7 message from {source_ip}")
             return jsonify({"status": "error", "message": "No HL7 message provided"}), 400
 
+        logger.info(f"[HTTP] Extracted {len(hl7_message)} char HL7 message from {source_ip}")
+        
         try:
             result = ingest_service.process_hl7(hl7_message, source_ip)
         except Exception as exc:
+            duration = time.time() - start_time
+            logger.error(f"[HTTP] HL7 parse error from {source_ip} after {duration:.3f}s: {str(exc)}")
             return jsonify({"status": "error", "message": f"Failed to parse HL7 message: {str(exc)}"}), 400
 
+        duration = time.time() - start_time
         if result["delivery"]["status"] == "delivered":
+            logger.info(f"[HTTP] 200 OK to {source_ip} in {duration:.3f}s | message processed and delivered")
             return (
                 jsonify(
                     {
@@ -41,6 +60,7 @@ def create_ingest_blueprint(ingest_service):
                 200,
             )
 
+        logger.warning(f"[HTTP] 207 Multi-Status to {source_ip} in {duration:.3f}s | parsed OK but delivery failed (queued for retry)")
         return (
             jsonify(
                 {
@@ -56,18 +76,30 @@ def create_ingest_blueprint(ingest_service):
 
     @ingest_bp.route("/astm/receive", methods=["POST"])
     def receive_astm():
+        start_time = time.time()
         source_ip = request.headers.get("X-Original-Source-IP", request.remote_addr)
+        content_length = request.headers.get("Content-Length", "0")
+        
+        logger.info(f"[HTTP] POST /astm/receive from {source_ip} | {content_length} bytes")
+        
         astm_message = request.data.decode("utf-8", errors="ignore")
 
         if not astm_message:
+            logger.warning(f"[HTTP] Empty ASTM message from {source_ip}")
             return jsonify({"status": "error", "message": "No ASTM message provided"}), 400
 
+        logger.info(f"[HTTP] Extracted {len(astm_message)} char ASTM message from {source_ip}")
+        
         try:
             result = ingest_service.process_astm(astm_message, source_ip)
         except Exception as exc:
+            duration = time.time() - start_time
+            logger.error(f"[HTTP] ASTM parse error from {source_ip} after {duration:.3f}s: {str(exc)}")
             return jsonify({"status": "error", "message": f"Failed to parse ASTM message: {str(exc)}"}), 400
 
+        duration = time.time() - start_time
         if result["delivery"]["status"] == "delivered":
+            logger.info(f"[HTTP] 200 OK to {source_ip} in {duration:.3f}s | message processed and delivered")
             return (
                 jsonify(
                     {
@@ -84,6 +116,7 @@ def create_ingest_blueprint(ingest_service):
                 200,
             )
 
+        logger.warning(f"[HTTP] 207 Multi-Status to {source_ip} in {duration:.3f}s | parsed OK but delivery failed (queued for retry)")
         return (
             jsonify(
                 {

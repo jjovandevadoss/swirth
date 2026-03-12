@@ -6,6 +6,9 @@ parsing them, persisting them, and forwarding to an external API.
 import logging
 import os
 import sys
+import collections
+import socket
+import threading as _threading
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
@@ -27,10 +30,46 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# In-memory log buffer — last 400 records, exposed via /api/logs
+# ---------------------------------------------------------------------------
+_log_buffer: collections.deque = collections.deque(maxlen=400)
+_log_lock = _threading.Lock()
+
+
+class _MemoryHandler(logging.Handler):
+    _FMT = logging.Formatter(
+        '%(asctime)s  %(levelname)-8s  %(name)s  %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    def emit(self, record):
+        try:
+            msg = self._FMT.format(record)
+        except Exception:
+            msg = record.getMessage()
+        entry = {
+            'ts': record.created,
+            'level': record.levelname,
+            'name': record.name,
+            'msg': msg,
+        }
+        with _log_lock:
+            _log_buffer.append(entry)
+
+
+logging.getLogger().addHandler(_MemoryHandler())
+
 
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
+
+    logger.info('=' * 60)
+    logger.info('Swirth Lab Interface Gateway starting...')
+    logger.info(f'Database: {app.config["DB_PATH"]}')
+    logger.info(f'API destination: {app.config["API_URL"]}')
+    logger.info('=' * 60)
 
     repository = MessageRepository(app.config['DB_PATH'])
     mapping_repository = MappingRepository(app.config['DB_PATH'])
@@ -53,6 +92,7 @@ def create_app() -> Flask:
         poll_interval_seconds=app.config['DELIVERY_POLL_INTERVAL']
     )
     delivery_service.start()
+    logger.info(f'Delivery service started: max_attempts={app.config["DELIVERY_MAX_ATTEMPTS"]}, poll_interval={app.config["DELIVERY_POLL_INTERVAL"]}s')
 
     ingest_service = IngestService(
         repository=repository,
@@ -209,6 +249,36 @@ def create_app() -> Flask:
     def not_found(error):
         return jsonify({'status': 'error', 'message': 'Endpoint not found'}), 404
 
+    @app.route('/api/logs', methods=['GET'])
+    def get_logs():
+        try:
+            since = float(request.args.get('since', 0))
+        except (TypeError, ValueError):
+            since = 0.0
+        with _log_lock:
+            entries = [e for e in _log_buffer if e['ts'] > since]
+        return jsonify({'logs': entries})
+
+    @app.route('/api/listener-status', methods=['GET'])
+    def listener_status():
+        def _check(port):
+            try:
+                with socket.create_connection(('127.0.0.1', int(port)), timeout=0.5):
+                    return True
+            except OSError:
+                return False
+        return jsonify({
+            'http': {'port': app.config.get('PORT', 5001), 'listening': True},
+            'mllp': {
+                'port': app.config.get('MLLP_PORT', 6000),
+                'listening': _check(app.config.get('MLLP_PORT', 6000)),
+            },
+            'astm': {
+                'port': app.config.get('ASTM_PORT', 7000),
+                'listening': _check(app.config.get('ASTM_PORT', 7000)),
+            },
+        })
+
     @app.errorhandler(500)
     def internal_error(error):
         logger.error(f'Internal server error: {str(error)}')
@@ -221,6 +291,12 @@ app = create_app()
 
 
 if __name__ == '__main__':
+    logger.info('=' * 60)
+    logger.info('Starting Flask HTTP server...')
+    logger.info(f'HTTP bound to {app.config["HOST"]}:{app.config["PORT"]}')
+    logger.info(f'Expected MLLP listener: {app.config.get("MLLP_HOST","0.0.0.0")}:{app.config.get("MLLP_PORT",6000)}')
+    logger.info(f'Expected ASTM listener: {app.config.get("ASTM_HOST","0.0.0.0")}:{app.config.get("ASTM_PORT",7000)}')
+    logger.info('=' * 60)
     app.run(
         host=app.config['HOST'],
         port=app.config['PORT'],

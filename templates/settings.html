@@ -144,6 +144,80 @@
         .toast.error { border-color: var(--danger-color); }
         .toast.warning { border-color: var(--warning-color); }
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        /* ── Log viewer ──────────────────────────────────────────────── */
+        .log-panel {
+            background: #0f172a; border-radius: 6px; padding: 1rem;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.78rem; line-height: 1.6; height: 300px;
+            overflow-y: auto; color: #94a3b8;
+        }
+        .log-panel .empty-msg { color: #475569; font-style: italic; }
+        .log-line { margin: 0; white-space: pre-wrap; word-break: break-all; padding: 1px 0; }
+        .log-line.INFO    { color: #94a3b8; }
+        .log-line.DEBUG   { color: #64748b; }
+        .log-line.WARNING { color: #f59e0b; }
+        .log-line.ERROR, .log-line.CRITICAL { color: #f87171; }
+        .log-toolbar { display:flex; gap:0.5rem; align-items:center; margin-bottom:0.75rem; flex-wrap:wrap; }
+        .log-filter-btn {
+            padding: 0.25rem 0.65rem; border-radius:4px; border:1px solid var(--border-color);
+            font-size: 0.75rem; font-weight:600; cursor:pointer; background:white;
+            transition: all 0.1s; text-transform:uppercase; letter-spacing:0.04em;
+        }
+        .log-filter-btn.active { background:var(--primary-color); color:white; border-color:var(--primary-color); }
+        .log-filter-btn.warn-btn.active { background:#f59e0b; border-color:#f59e0b; color:white; }
+        .log-filter-btn.err-btn.active  { background:#ef4444; border-color:#ef4444; color:white; }
+        .log-clear-btn { margin-left:auto; padding:0.25rem 0.65rem; border:1px solid var(--border-color); border-radius:4px; background:white; font-size:0.75rem; cursor:pointer; }
+        /* ── Status badges ───────────────────────────────────────────── */
+        .status-badge {
+            display:inline-flex; align-items:center; gap:0.35rem;
+            font-size:0.72rem; font-weight:700; padding:0.2rem 0.55rem;
+            border-radius:999px; text-transform:uppercase; letter-spacing:0.05em;
+        }
+        .status-dot { width:6px; height:6px; border-radius:50%; }
+        .badge-up   { background:#dcfce7; color:#15803d; }
+        .badge-up   .status-dot { background:#16a34a; }
+        .badge-down { background:#fee2e2; color:#b91c1c; }
+        .badge-down .status-dot { background:#dc2626; }
+        .badge-chk  { background:#f1f5f9; color:#64748b; }
+        .badge-chk  .status-dot { background:#94a3b8; }
+        .port-row { display:flex; gap:1rem; align-items:flex-end; margin-bottom:1.25rem; }
+        .port-row .form-col { flex:1; }
+        .port-row .form-col.small { flex:0 0 120px; }
+        .port-status-wrap { flex:0 0 auto; padding-bottom:0.4rem; }
+        /* ── Setup guide ─────────────────────────────────────────────── */
+        .guide-tabs { display:flex; gap:0.4rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+        .guide-tab {
+            padding:0.4rem 0.9rem; border-radius:6px; font-size:0.82rem; font-weight:600;
+            cursor:pointer; border:1px solid var(--border-color); background:white; color:var(--text-muted);
+            transition:all 0.15s;
+        }
+        .guide-tab:hover { border-color:#cbd5e1; color:var(--text-color); }
+        .guide-tab.active { background:var(--primary-color); color:white; border-color:var(--primary-color); }
+        .guide-panel { display:none; }
+        .guide-panel.active { display:block; }
+        .guide-steps { list-style:none; padding:0; margin:0; }
+        .guide-step { display:flex; gap:0.9rem; margin-bottom:1rem; }
+        .guide-num {
+            flex-shrink:0; width:22px; height:22px; border-radius:50%;
+            background:var(--primary-color); color:white;
+            font-size:0.7rem; font-weight:700; display:flex; align-items:center; justify-content:center;
+            margin-top:2px;
+        }
+        .guide-body { flex:1; font-size:0.875rem; color:var(--text-color); }
+        .guide-body b { font-weight:600; }
+        .guide-body code {
+            background:#f1f5f9; border:1px solid #e2e8f0; border-radius:3px;
+            padding:0.05rem 0.35rem; font-family:'SF Mono','Fira Code',monospace; font-size:0.82em; color:#0f172a;
+        }
+        .code-block {
+            display:block; background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px;
+            padding:0.5rem 0.75rem; font-family:'SF Mono','Fira Code',monospace; font-size:0.8rem;
+            margin-top:0.4rem; white-space:pre; color:#334155; overflow-x:auto;
+        }
+        .note-box { background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:0.65rem 0.9rem; font-size:0.82rem; color:#92400e; margin-top:0.75rem; }
+        .note-box i { margin-right:0.3rem; }
+        main { max-width:960px; }
     </style>
 </head>
 <body>
@@ -160,87 +234,273 @@
     </header>
 
     <main>
+        <!-- ── Analyzer Setup Guide ──────────────────────────────────── -->
+        <div class="settings-card">
+            <div class="card-header">
+                <h2><i class="fas fa-book-open"></i> Analyzer Setup Guide</h2>
+            </div>
+            <div class="card-body">
+                <div class="guide-tabs">
+                    <button class="guide-tab active" onclick="switchGuide('astm',this)">ASTM / LIS2-A2 Analyzer</button>
+                    <button class="guide-tab" onclick="switchGuide('hl7',this)">HL7 / MLLP Analyzer</button>
+                    <button class="guide-tab" onclick="switchGuide('http',this)">HTTP / Direct POST</button>
+                </div>
+
+                <!-- ASTM Guide -->
+                <div id="guide-astm" class="guide-panel active">
+                    <ul class="guide-steps">
+                        <li class="guide-step"><span class="guide-num">1</span>
+                            <div class="guide-body"><b>On the analyzer — open LIS / Host settings.</b>
+                                Look for a menu called <em>LIS Setup</em>, <em>Host Computer</em>, or <em>External Output</em>.
+                            </div>
+                        </li>
+                        <li class="guide-step"><span class="guide-num">2</span>
+                            <div class="guide-body"><b>Set the protocol to ASTM E1394 (or LIS2-A2).</b>
+                                Some analyzers label this as <em>Serial LIS</em> or <em>Bidirectional ASTM</em>. Select TCP/IP mode — not RS-232.
+                            </div>
+                        </li>
+                        <li class="guide-step"><span class="guide-num">3</span>
+                            <div class="guide-body"><b>Enter the Host IP and Port.</b>
+                                Set the host IP to the IP address of this machine and the port to the <b>ASTM Port</b> below (default <code>7000</code>).
+                                The analyzer acts as the <em>TCP Client</em>; this server is the <em>TCP Server / Listener</em>.
+                            </div>
+                        </li>
+                        <li class="guide-step"><span class="guide-num">4</span>
+                            <div class="guide-body"><b>Verify the ASTM listener is active.</b>
+                                Check the <em>ASTM</em> status badge in the Listener Settings section below — it must show <em>Listening</em>.
+                                If it shows <em>Not listening</em>, restart the application.
+                            </div>
+                        </li>
+                        <li class="guide-step"><span class="guide-num">5</span>
+                            <div class="guide-body"><b>Run a test transmission from the analyzer</b> (QC sample or "Send Last Result").
+                                Watch the Live Log Viewer at the bottom of this page for ENQ/ACK handshake and record parsing activity.
+                            </div>
+                        </li>
+                        <li class="guide-step"><span class="guide-num">6</span>
+                            <div class="guide-body"><b>Create a Field Mapping profile.</b>
+                                Go to <a href="/mappings">Field Mappings</a>, create a profile with <code>Protocol Filter = ASTM</code> and map result fields
+                                such as <code>results[*].value</code>, <code>results[*].units</code>, <code>patient.id</code> to your destination API fields.
+                                Mark it <em>Active</em>.
+                            </div>
+                        </li>
+                    </ul>
+                    <div class="note-box"><i class="fas fa-exclamation-triangle"></i>
+                        Ensure TCP port <code>7000</code> (or your configured ASTM port) is open inbound on any firewall between the analyzer and this machine.
+                    </div>
+                </div>
+
+                <!-- HL7 Guide -->
+                <div id="guide-hl7" class="guide-panel">
+                    <ul class="guide-steps">
+                        <li class="guide-step"><span class="guide-num">1</span>
+                            <div class="guide-body"><b>On the analyzer — open HL7 / LIS settings.</b>
+                                Look for a menu called <em>HL7 Output</em>, <em>MLLP Settings</em>, or <em>Interface Setup</em>.
+                            </div>
+                        </li>
+                        <li class="guide-step"><span class="guide-num">2</span>
+                            <div class="guide-body"><b>Set the protocol to HL7 v2.x over MLLP (TCP).</b>
+                                MLLP (Minimal Lower Layer Protocol) is the standard TCP framing for HL7.
+                                Configure the analyzer as the <em>sender / client</em> — this server is the <em>receiver / listener</em>.
+                                This server automatically sends an <code>MSA|AA</code> ACK after every message.
+                            </div>
+                        </li>
+                        <li class="guide-step"><span class="guide-num">3</span>
+                            <div class="guide-body"><b>Enter the Host IP and Port.</b>
+                                Set the host IP to this machine's IP and the port to the <b>MLLP Port</b> below (default <code>6000</code>).
+                            </div>
+                        </li>
+                        <li class="guide-step"><span class="guide-num">4</span>
+                            <div class="guide-body"><b>Verify the MLLP listener is active.</b>
+                                Check the <em>MLLP (HL7)</em> status badge below — it must show <em>Listening</em>.
+                            </div>
+                        </li>
+                        <li class="guide-step"><span class="guide-num">5</span>
+                            <div class="guide-body"><b>Trigger a test message.</b>
+                                Send a test result or ORU^R01 message. The log viewer will show the MSH fields and parsed OBX observations.
+                            </div>
+                        </li>
+                        <li class="guide-step"><span class="guide-num">6</span>
+                            <div class="guide-body"><b>Create a Field Mapping profile.</b>
+                                Go to <a href="/mappings">Field Mappings</a>, create a profile with <code>Protocol Filter = HL7</code> and map fields such as
+                                <code>observations[*].value</code>, <code>patient.id</code>. Mark it <em>Active</em>.
+                            </div>
+                        </li>
+                    </ul>
+                    <div class="note-box"><i class="fas fa-exclamation-triangle"></i>
+                        Ensure TCP port <code>6000</code> (or your configured MLLP port) is open inbound on this machine's firewall.
+                    </div>
+                </div>
+
+                <!-- HTTP Guide -->
+                <div id="guide-http" class="guide-panel">
+                    <ul class="guide-steps">
+                        <li class="guide-step"><span class="guide-num">1</span>
+                            <div class="guide-body"><b>Configure the analyzer or middleware to HTTP POST directly to this server.</b>
+                                Use this when the sender already speaks HTTP rather than raw TCP.
+                            </div>
+                        </li>
+                        <li class="guide-step"><span class="guide-num">2</span>
+                            <div class="guide-body"><b>Use the correct endpoint for your message type:</b>
+                                <span class="code-block">POST http://&lt;this-machine-ip&gt;:<span class="js-http-port">5001</span>/hl7/receive   (raw HL7 text body)
+POST http://&lt;this-machine-ip&gt;:<span class="js-http-port">5001</span>/astm/receive  (raw ASTM text body)</span>
+                                Send the raw message as the request body with <code>Content-Type: text/plain</code>.
+                            </div>
+                        </li>
+                        <li class="guide-step"><span class="guide-num">3</span>
+                            <div class="guide-body"><b>For HL7 you may also POST JSON:</b>
+                                <span class="code-block">POST /hl7/receive
+Content-Type: application/json
+{ "message": "MSH|^~\\&|..." }</span>
+                            </div>
+                        </li>
+                        <li class="guide-step"><span class="guide-num">4</span>
+                            <div class="guide-body"><b>Interpret the response.</b>
+                                <code>200 OK</code> + <code>"status":"success"</code> = parsed and forwarded.
+                                <code>207</code> = ingested but outbound delivery failed and has been queued for retry.
+                            </div>
+                        </li>
+                    </ul>
+                    <div class="note-box"><i class="fas fa-info-circle"></i>
+                        The HTTP server port is controlled by the <b>HTTP Port</b> field in Listener Settings. Port changes require an app restart.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── System Configuration ───────────────────────────────────── -->
         <div class="settings-card">
             <div class="card-header">
                 <h2><i class="fas fa-sliders-h"></i> System Configuration</h2>
             </div>
             <div class="card-body">
                 <form id="settingsForm">
-                    <!-- Listeners -->
+
+                    <!-- Listener Settings -->
                     <div class="form-section">
                         <div class="section-title"><i class="fas fa-server"></i> Listener Settings</div>
-                        
-                        <div class="form-row">
+                        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1.25rem;">
+                            These TCP/HTTP addresses are bound at startup. Port or host changes require an app restart.
+                            Use <code style="background:#f1f5f9;padding:0 3px;border-radius:3px;">0.0.0.0</code> to accept connections on all network interfaces.
+                        </p>
+
+                        <!-- HTTP -->
+                        <div class="port-row">
                             <div class="form-col">
                                 <label class="form-label">HTTP Host</label>
                                 <input type="text" class="form-control" name="host" id="host" required>
-                                <span class="form-hint">Address to bind the web server to</span>
+                                <span class="form-hint">Bind address for the web UI and HTTP ingest endpoints (<code>/hl7/receive</code>, <code>/astm/receive</code>).</span>
                             </div>
                             <div class="form-col small">
-                                <label class="form-label">Port</label>
+                                <label class="form-label">HTTP Port</label>
                                 <input type="number" class="form-control" name="port" id="port" min="1024" max="65535" required>
+                                <span class="form-hint">Default: 5001</span>
+                            </div>
+                            <div class="port-status-wrap">
+                                <span id="status-http" class="status-badge badge-chk"><span class="status-dot"></span>&nbsp;Checking</span>
                             </div>
                         </div>
 
-                        <div class="form-row">
+                        <!-- MLLP -->
+                        <div class="port-row">
                             <div class="form-col">
-                                <label class="form-label">MLLP Host (HL7)</label>
+                                <label class="form-label">MLLP Host <span style="font-weight:400;color:var(--text-muted);">(HL7 analyzers)</span></label>
                                 <input type="text" class="form-control" name="mllp_host" id="mllp_host" required>
-                                <span class="form-hint">Address for TCP/IP MLLP listener</span>
+                                <span class="form-hint">Raw TCP socket for HL7 v2.x messages using MLLP framing. HL7 analyzers connect here as TCP clients. An MSA|AA ACK is automatically returned.</span>
                             </div>
                             <div class="form-col small">
-                                <label class="form-label">Port</label>
+                                <label class="form-label">MLLP Port</label>
                                 <input type="number" class="form-control" name="mllp_port" id="mllp_port" min="1024" max="65535" required>
+                                <span class="form-hint">Default: 6000</span>
+                            </div>
+                            <div class="port-status-wrap">
+                                <span id="status-mllp" class="status-badge badge-chk"><span class="status-dot"></span>&nbsp;Checking</span>
                             </div>
                         </div>
 
-                        <div class="form-row">
+                        <!-- ASTM -->
+                        <div class="port-row">
                             <div class="form-col">
-                                <label class="form-label">ASTM Host</label>
+                                <label class="form-label">ASTM Host <span style="font-weight:400;color:var(--text-muted);">(hematology / chemistry)</span></label>
                                 <input type="text" class="form-control" name="astm_host" id="astm_host" required>
-                                <span class="form-hint">Address for raw TCP/IP listener</span>
+                                <span class="form-hint">Raw TCP socket for ASTM E1394 / LIS2-A2. Handles the full ENQ/ACK/NAK handshake and STX–ETX framing automatically.</span>
                             </div>
                             <div class="form-col small">
-                                <label class="form-label">Port</label>
+                                <label class="form-label">ASTM Port</label>
                                 <input type="number" class="form-control" name="astm_port" id="astm_port" min="1024" max="65535" required>
+                                <span class="form-hint">Default: 7000</span>
+                            </div>
+                            <div class="port-status-wrap">
+                                <span id="status-astm" class="status-badge badge-chk"><span class="status-dot"></span>&nbsp;Checking</span>
                             </div>
                         </div>
 
                         <div class="info-box">
-                            <strong><i class="fas fa-info-circle"></i> Connection Information</strong>
+                            <strong><i class="fas fa-plug"></i> Active Connection Addresses — point your analyzer here</strong>
                             <ul>
-                                <li>HTTP Endpoint: <span class="info-span">http://<span id="currentHost">...</span>:<span id="currentPort">...</span>/hl7/receive</span></li>
-                                <li>MLLP Service: <span class="info-span"><span id="currentMllpHost">...</span>:<span id="currentMllpPort">...</span></span></li>
-                                <li>ASTM Service: <span class="info-span"><span id="currentAstmHost">...</span>:<span id="currentAstmPort">...</span></span></li>
+                                <li>HTTP ingest: <span class="info-span">http://<span id="currentHost">…</span>:<span id="currentPort">…</span>/hl7/receive</span> &amp; <span class="info-span">/astm/receive</span></li>
+                                <li>MLLP (HL7): <span class="info-span"><span id="currentMllpHost">…</span>:<span id="currentMllpPort">…</span></span></li>
+                                <li>ASTM TCP:   <span class="info-span"><span id="currentAstmHost">…</span>:<span id="currentAstmPort">…</span></span></li>
                             </ul>
                         </div>
                     </div>
 
-                    <hr style="border:0; border-top:1px solid #f1f5f9; margin:2rem 0;">
+                    <hr style="border:0;border-top:1px solid #f1f5f9;margin:2rem 0;">
 
-                    <!-- API Forwarding -->
+                    <!-- Forwarding Destination -->
                     <div class="form-section">
                         <div class="section-title"><i class="fas fa-paper-plane"></i> Forwarding Destination</div>
-                        <div class="form-col" style="margin-bottom: 1rem;">
+                        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1.25rem;">
+                            After a message is parsed, the structured JSON is HTTP POSTed to this endpoint. Changes here take effect immediately without a restart.
+                        </p>
+                        <div class="form-col" style="margin-bottom:1.25rem;">
                             <label class="form-label">Target API URL</label>
-                            <input type="url" class="form-control" name="api_url" id="api_url" required>
-                            <span class="form-hint">Where parsed JSON data should be POSTed</span>
+                            <input type="url" class="form-control" name="api_url" id="api_url" placeholder="https://your-api.com/results" required>
+                            <span class="form-hint">Full URL where parsed result JSON is sent via HTTP POST. Must be reachable from this machine.</span>
                         </div>
-                         <div class="form-row">
+                        <div class="form-row">
                             <div class="form-col">
                                 <label class="form-label">API Key</label>
                                 <input type="password" class="form-control" name="api_key" id="api_key" placeholder="Optional bearer token">
+                                <span class="form-hint">Sent as <code>Authorization: Bearer &lt;key&gt;</code>. Leave blank if the endpoint requires no auth.</span>
                             </div>
                             <div class="form-col small">
                                 <label class="form-label">Timeout (s)</label>
-                                <input type="number" class="form-control" name="api_timeout" id="api_timeout" min="1" max="300" value="30">
+                                <input type="number" class="form-control" name="api_timeout" id="api_timeout" min="1" max="300">
+                                <span class="form-hint">Seconds before an outbound request is abandoned.</span>
                             </div>
                         </div>
                     </div>
 
-                    <hr style="border:0; border-top:1px solid #f1f5f9; margin:2rem 0;">
+                    <hr style="border:0;border-top:1px solid #f1f5f9;margin:2rem 0;">
 
-                    <!-- System -->
+                    <!-- Retry & Persistence -->
+                    <div class="form-section">
+                        <div class="section-title"><i class="fas fa-redo"></i> Retry &amp; Persistence</div>
+                        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1.25rem;">
+                            Failed deliveries are stored in SQLite and retried by a background worker. All received messages remain in the database for auditing.
+                        </p>
+                        <div class="form-row">
+                            <div class="form-col">
+                                <label class="form-label">Max Retry Attempts</label>
+                                <input type="number" class="form-control" name="delivery_max_attempts" id="delivery_max_attempts" min="1" max="50">
+                                <span class="form-hint">How many times to attempt delivery before a message is marked permanently failed. Failed messages remain in the DB for inspection.</span>
+                            </div>
+                            <div class="form-col">
+                                <label class="form-label">Retry Poll Interval (s)</label>
+                                <input type="number" class="form-control" name="delivery_poll_interval" id="delivery_poll_interval" min="1" max="3600">
+                                <span class="form-hint">How often the background worker scans for failed messages to retry. Lower values = faster recovery.</span>
+                            </div>
+                        </div>
+                        <div class="form-col">
+                            <label class="form-label">Database Path</label>
+                            <input type="text" class="form-control" name="db_path" id="db_path">
+                            <span class="form-hint">Relative or absolute path to the SQLite file. Contains all received messages, parsed data, and delivery state.</span>
+                        </div>
+                    </div>
+
+                    <hr style="border:0;border-top:1px solid #f1f5f9;margin:2rem 0;">
+
+                    <!-- System Controls -->
                     <div class="form-section">
                         <div class="section-title"><i class="fas fa-cogs"></i> System Controls</div>
                         <div class="form-row">
@@ -250,15 +510,17 @@
                                     <option value="True">Enabled</option>
                                     <option value="False">Disabled</option>
                                 </select>
+                                <span class="form-hint">Enables Flask debug mode and detailed error pages. Disable in production.</span>
                             </div>
                             <div class="form-col">
                                 <label class="form-label">Log Level</label>
                                 <select class="form-select" name="log_level" id="log_level">
-                                    <option value="DEBUG">DEBUG</option>
-                                    <option value="INFO">INFO</option>
-                                    <option value="WARNING">WARNING</option>
-                                    <option value="ERROR">ERROR</option>
+                                    <option value="DEBUG">DEBUG — every internal event (verbose)</option>
+                                    <option value="INFO">INFO — normal operation (recommended)</option>
+                                    <option value="WARNING">WARNING — unexpected conditions only</option>
+                                    <option value="ERROR">ERROR — failures only</option>
                                 </select>
+                                <span class="form-hint">Use DEBUG to trace message parsing issues; use INFO or higher in normal operation.</span>
                             </div>
                         </div>
                     </div>
@@ -267,9 +529,9 @@
                         <button type="button" class="btn btn-danger" onclick="restartApp()">
                             <i class="fas fa-power-off"></i> Restart App
                         </button>
-                        <div style="display:flex; gap:1rem;">
+                        <div style="display:flex;gap:1rem;">
                             <button type="button" class="btn btn-secondary" onclick="loadSettings()">
-                                Reset
+                                <i class="fas fa-undo"></i> Reset
                             </button>
                             <button type="button" class="btn" onclick="saveSettings()">
                                 <i class="fas fa-save"></i> Save Configuration
@@ -279,12 +541,45 @@
                 </form>
             </div>
         </div>
+
+        <!-- ── Live Log Viewer ────────────────────────────────────────── -->
+        <div class="settings-card">
+            <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+                <h2><i class="fas fa-terminal"></i> Live Log Viewer</h2>
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.82rem;color:var(--text-muted);">
+                    <input type="checkbox" id="log-autoscroll" checked style="accent-color:var(--primary-color);"> Auto-scroll
+                </label>
+            </div>
+            <div class="card-body" style="padding-bottom:1rem;">
+                <div class="log-toolbar">
+                    <button class="log-filter-btn active" onclick="setLogFilter('ALL',this)">All</button>
+                    <button class="log-filter-btn" onclick="setLogFilter('INFO',this)">Info</button>
+                    <button class="log-filter-btn warn-btn" onclick="setLogFilter('WARNING',this)">Warnings</button>
+                    <button class="log-filter-btn err-btn" onclick="setLogFilter('ERROR',this)">Errors</button>
+                    <button class="log-clear-btn" onclick="clearLogs()"><i class="fas fa-trash-alt"></i> Clear</button>
+                    <span id="log-count" style="font-size:0.78rem;color:var(--text-muted);margin-left:0.25rem;"></span>
+                </div>
+                <div class="log-panel" id="log-panel">
+                    <span class="empty-msg">Waiting for log entries…</span>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <div id="notification-area"></div>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+        // ── Guide tabs ──────────────────────────────────────────────────
+        function switchGuide(id, btn) {
+            document.querySelectorAll('.guide-panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.guide-tab').forEach(b => b.classList.remove('active'));
+            document.getElementById('guide-' + id).classList.add('active');
+            btn.classList.add('active');
+        }
+
+        // ── Toast ───────────────────────────────────────────────────────
         function showToast(msg, type = 'success') {
             const icon = type === 'success' ? 'check-circle' : type === 'warning' ? 'exclamation-triangle' : 'exclamation-circle';
             const toast = $(`<div class="toast ${type}"><i class="fas fa-${icon}"></i> <span>${msg}</span></div>`);
@@ -292,78 +587,136 @@
             setTimeout(() => toast.fadeOut(300, () => toast.remove()), 4000);
         }
 
+        // ── Settings ────────────────────────────────────────────────────
         function loadSettings() {
-            $.get('/api/config', function(config) {
-                if(!config) return;
-                
-                $('#host').val(config.HOST || '0.0.0.0');
-                $('#port').val(config.PORT || 5001);
-                $('#mllp_host').val(config.MLLP_HOST || '0.0.0.0');
-                $('#mllp_port').val(config.MLLP_PORT || 6000);
-                $('#astm_host').val(config.ASTM_HOST || '0.0.0.0');
-                $('#astm_port').val(config.ASTM_PORT || 7000);
-                
-                $('#api_url').val(config.API_URL || '');
-                $('#api_key').val(config.API_KEY || '');
-                $('#api_timeout').val(config.API_TIMEOUT || 30);
-                
-                $('#debug').val(String(config.DEBUG));
-                $('#log_level').val(config.LOG_LEVEL || 'INFO');
-
-                updateInfo(config);
+            $.get('/api/config', function(c) {
+                if (!c) return;
+                $('#host').val(c.HOST || '0.0.0.0');
+                $('#port').val(c.PORT || 5001);
+                $('#mllp_host').val(c.MLLP_HOST || '0.0.0.0');
+                $('#mllp_port').val(c.MLLP_PORT || 6000);
+                $('#astm_host').val(c.ASTM_HOST || '0.0.0.0');
+                $('#astm_port').val(c.ASTM_PORT || 7000);
+                $('#api_url').val(c.API_URL || '');
+                $('#api_key').val(c.API_KEY || '');
+                $('#api_timeout').val(c.API_TIMEOUT || 30);
+                $('#delivery_max_attempts').val(c.DELIVERY_MAX_ATTEMPTS || 5);
+                $('#delivery_poll_interval').val(c.DELIVERY_POLL_INTERVAL || 10);
+                $('#db_path').val(c.DB_PATH || 'data/messages.db');
+                $('#debug').val(String(c.DEBUG));
+                $('#log_level').val(c.LOG_LEVEL || 'INFO');
+                updateInfo(c);
+                document.querySelectorAll('.js-http-port').forEach(el => el.textContent = c.PORT || 5001);
             }).fail(() => showToast('Failed to load settings', 'error'));
         }
 
-        function updateInfo(config) {
-            $('#currentHost').text(config.HOST);
-            $('#currentPort').text(config.PORT);
-            $('#currentMllpHost').text(config.MLLP_HOST);
-            $('#currentMllpPort').text(config.MLLP_PORT);
-            $('#currentAstmHost').text(config.ASTM_HOST);
-            $('#currentAstmPort').text(config.ASTM_PORT);
+        function updateInfo(c) {
+            $('#currentHost').text(c.HOST); $('#currentPort').text(c.PORT);
+            $('#currentMllpHost').text(c.MLLP_HOST); $('#currentMllpPort').text(c.MLLP_PORT);
+            $('#currentAstmHost').text(c.ASTM_HOST); $('#currentAstmPort').text(c.ASTM_PORT);
         }
 
         function saveSettings() {
             const data = {
-                HOST: $('#host').val(),
-                PORT: parseInt($('#port').val()),
-                MLLP_HOST: $('#mllp_host').val(),
-                MLLP_PORT: parseInt($('#mllp_port').val()),
-                ASTM_HOST: $('#astm_host').val(),
-                ASTM_PORT: parseInt($('#astm_port').val()),
-                API_URL: $('#api_url').val(),
-                API_KEY: $('#api_key').val(),
+                HOST: $('#host').val(), PORT: parseInt($('#port').val()),
+                MLLP_HOST: $('#mllp_host').val(), MLLP_PORT: parseInt($('#mllp_port').val()),
+                ASTM_HOST: $('#astm_host').val(), ASTM_PORT: parseInt($('#astm_port').val()),
+                API_URL: $('#api_url').val(), API_KEY: $('#api_key').val(),
                 API_TIMEOUT: parseInt($('#api_timeout').val()),
-                DEBUG: $('#debug').val(),
-                LOG_LEVEL: $('#log_level').val()
+                DELIVERY_MAX_ATTEMPTS: parseInt($('#delivery_max_attempts').val()),
+                DELIVERY_POLL_INTERVAL: parseInt($('#delivery_poll_interval').val()),
+                DB_PATH: $('#db_path').val(),
+                DEBUG: $('#debug').val(), LOG_LEVEL: $('#log_level').val()
             };
-
             $.ajax({
-                url: '/api/config',
-                method: 'POST',
-                contentType: 'application/json',
+                url: '/api/config', method: 'POST', contentType: 'application/json',
                 data: JSON.stringify(data),
                 success: (resp) => {
-                    if(resp.requires_restart) {
-                        showToast('Saved. Restart required for network changes', 'warning');
-                    } else {
-                        showToast('Settings saved successfully');
-                    }
+                    if (resp.requires_restart) showToast('Saved — restart required for port/host changes', 'warning');
+                    else showToast('Configuration saved');
                     updateInfo(data);
+                    document.querySelectorAll('.js-http-port').forEach(el => el.textContent = data.PORT);
                 },
                 error: (xhr) => showToast('Save failed: ' + xhr.statusText, 'error')
             });
         }
 
         function restartApp() {
-            if(!confirm('Restart the application?')) return;
+            if (!confirm('Restart the application? The page will reload after ~3 seconds.')) return;
             $.post('/api/restart', () => {
-                showToast('Restarting... Page will reload.', 'warning');
-                setTimeout(() => location.reload(), 3000);
+                showToast('Restarting…', 'warning');
+                setTimeout(() => location.reload(), 3500);
             }).fail(() => showToast('Restart trigger failed', 'error'));
         }
 
-        $(document).ready(loadSettings);
+        // ── Listener status badges ───────────────────────────────────────
+        function updateBadge(id, isUp) {
+            const el = document.getElementById('status-' + id);
+            if (!el) return;
+            el.className = 'status-badge ' + (isUp ? 'badge-up' : 'badge-down');
+            el.innerHTML = '<span class="status-dot"></span>&nbsp;' + (isUp ? 'Listening' : 'Not listening');
+        }
+
+        function loadListenerStatus() {
+            $.getJSON('/api/listener-status', function(d) {
+                updateBadge('http', d.http && d.http.listening);
+                updateBadge('mllp', d.mllp && d.mllp.listening);
+                updateBadge('astm', d.astm && d.astm.listening);
+            });
+        }
+
+        // ── Log viewer ──────────────────────────────────────────────────
+        let _seenTs = 0, _allLogs = [], _logFilter = 'ALL';
+
+        function setLogFilter(level, btn) {
+            _logFilter = level;
+            document.querySelectorAll('.log-filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            renderLogs();
+        }
+
+        function clearLogs() { _allLogs = []; _seenTs = 0; renderLogs(); }
+
+        function escHtml(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        function renderLogs() {
+            const panel = document.getElementById('log-panel');
+            let filtered = _allLogs;
+            if (_logFilter === 'ERROR') filtered = _allLogs.filter(l => l.level === 'ERROR' || l.level === 'CRITICAL');
+            else if (_logFilter !== 'ALL') filtered = _allLogs.filter(l => l.level === _logFilter);
+
+            if (filtered.length === 0) {
+                panel.innerHTML = '<span class="empty-msg">No log entries' + (_logFilter !== 'ALL' ? ' at this level' : '') + '…</span>';
+            } else {
+                panel.innerHTML = filtered.map(l =>
+                    `<p class="log-line ${escHtml(l.level)}">${escHtml(l.msg)}</p>`
+                ).join('');
+            }
+            if (document.getElementById('log-autoscroll').checked) panel.scrollTop = panel.scrollHeight;
+            document.getElementById('log-count').textContent = _allLogs.length ? _allLogs.length + ' entries' : '';
+        }
+
+        function pollLogs() {
+            $.getJSON('/api/logs?since=' + _seenTs, function(data) {
+                if (data && data.logs && data.logs.length) {
+                    _allLogs = _allLogs.concat(data.logs);
+                    if (_allLogs.length > 500) _allLogs = _allLogs.slice(-500);
+                    _seenTs = data.logs[data.logs.length - 1].ts;
+                    renderLogs();
+                }
+            });
+        }
+
+        // ── Init ────────────────────────────────────────────────────────
+        $(document).ready(function() {
+            loadSettings();
+            loadListenerStatus();
+            pollLogs();
+            setInterval(loadListenerStatus, 6000);
+            setInterval(pollLogs, 2000);
+        });
     </script>
 </body>
 </html>
