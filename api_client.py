@@ -16,7 +16,7 @@ class APIClient:
     Handles authentication, retries, and error handling.
     """
     
-    def __init__(self, api_url: str, api_key: Optional[str] = None, timeout: int = 30):
+    def __init__(self, api_url: str, api_key: Optional[str] = None, timeout: int = 30, mapping_service=None):
         """
         Initialize the API client.
         
@@ -24,10 +24,12 @@ class APIClient:
             api_url: The URL of the external API endpoint
             api_key: Optional API key for authentication
             timeout: Request timeout in seconds (default: 30)
+            mapping_service: Optional MappingService for custom field transformations
         """
         self.api_url = api_url
         self.api_key = api_key
         self.timeout = timeout
+        self.mapping_service = mapping_service
         self.session = requests.Session()
         
         # Set up headers
@@ -43,6 +45,81 @@ class APIClient:
             })
         
         logger.info(f"API Client initialized for endpoint: {self.api_url}")
+    
+    def _transform_to_client_format(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Transform parsed HL7/ASTM data to the client's required format.
+        Uses custom mapping service if available, otherwise falls back to default format.
+        
+        Args:
+            data: Parsed HL7 or ASTM data
+            
+        Returns:
+            Transformed data in client format
+        """
+        # Detect protocol from data
+        protocol = data.get('protocol', 'HL7')  # ASTM data has 'protocol' field, HL7 doesn't
+        
+        # Use mapping service if available
+        if self.mapping_service:
+            try:
+                transformed = self.mapping_service.apply_mapping(data, protocol)
+                logger.debug(f"Applied custom mapping: {len(transformed)} top-level fields")
+                return transformed
+            except Exception as e:
+                logger.warning(f"Custom mapping failed, falling back to default: {str(e)}")
+        
+        # Fallback to original hardcoded transformation for backward compatibility
+        logger.debug("Using default transformation (no active mapping profile)")
+        
+        # Extract displayNumber from patient ID or order number
+        display_number = ""
+        if data.get("patient") and data["patient"].get("id"):
+            display_number = str(data["patient"]["id"])
+        elif data.get("orders") and len(data["orders"]) > 0:
+            order = data["orders"][0]
+            display_number = str(order.get("filler_order_number") or order.get("placer_order_number") or "")
+        
+        # Extract testName from universal service identifier
+        test_name = ""
+        if data.get("orders") and len(data["orders"]) > 0:
+            universal_service = data["orders"][0].get("universal_service_id")
+            if universal_service:
+                test_name = str(universal_service)
+        
+        # Build result array from observations or results
+        result = []
+        
+        # Try HL7 observations first
+        if data.get("observations"):
+            for obs in data["observations"]:
+                field_name = str(obs.get("identifier") or "")
+                test_result = str(obs.get("value") or "")
+                if field_name or test_result:
+                    result.append({
+                        "fieldName": field_name,
+                        "testResult": test_result
+                    })
+        # Try ASTM results
+        elif data.get("results"):
+            for res in data["results"]:
+                test_id = res.get("universal_test_id", {})
+                field_name = str(test_id.get("test_id") or test_id.get("test_name") or "")
+                test_result = str(res.get("value") or "")
+                if field_name or test_result:
+                    result.append({
+                        "fieldName": field_name,
+                        "testResult": test_result
+                    })
+        
+        transformed = {
+            "displayNumber": display_number,
+            "testName": test_name,
+            "result": result
+        }
+        
+        logger.debug(f"Transformed data: displayNumber={display_number}, testName={test_name}, results={len(result)}")
+        return transformed
     
     def send_data(self, data: Dict[str, Any], retry_count: int = 3) -> requests.Response:
         """
@@ -62,9 +139,16 @@ class APIClient:
         if not data:
             raise ValueError("Cannot send empty data to API")
         
+        # Transform data to client format
+        try:
+            transformed_data = self._transform_to_client_format(data)
+        except Exception as e:
+            logger.error(f"Failed to transform data: {str(e)}")
+            raise Exception(f"Data transformation error: {str(e)}")
+        
         # Convert data to JSON
         try:
-            json_data = json.dumps(data, indent=2)
+            json_data = json.dumps(transformed_data, indent=2)
             logger.debug(f"Prepared JSON data: {len(json_data)} bytes")
         except Exception as e:
             logger.error(f"Failed to serialize data to JSON: {str(e)}")

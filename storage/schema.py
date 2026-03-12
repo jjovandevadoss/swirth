@@ -20,4 +20,18 @@ ON messages(protocol, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_messages_delivery_status
 ON messages(delivery_status, attempts, updated_at);
+
+CREATE TABLE IF NOT EXISTS mapping_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    protocol_filter TEXT,
+    is_active INTEGER DEFAULT 0,
+    config TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_mapping_profiles_active
+ON mapping_profiles(is_active);
 """

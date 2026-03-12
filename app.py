@@ -14,8 +14,11 @@ from api_client import APIClient
 from config import Config
 from parsers import ASTMParser, HL7Parser
 from routes import create_ingest_blueprint, create_results_blueprint
+from routes.mapping_routes import create_mapping_blueprint
 from services import DeliveryService, IngestService
+from services.mapping_service import MappingService
 from storage import MessageRepository
+from storage.mapping_repository import MappingRepository
 
 # Configure logging
 logging.basicConfig(
@@ -30,13 +33,17 @@ def create_app() -> Flask:
     app.config.from_object(Config)
 
     repository = MessageRepository(app.config['DB_PATH'])
+    mapping_repository = MappingRepository(app.config['DB_PATH'])
+    mapping_service = MappingService(mapping_repository)
+    
     hl7_parser = HL7Parser()
     astm_parser = ASTMParser()
 
     api_client = APIClient(
         api_url=app.config['API_URL'],
         api_key=app.config['API_KEY'],
-        timeout=app.config['API_TIMEOUT']
+        timeout=app.config['API_TIMEOUT'],
+        mapping_service=mapping_service
     )
 
     delivery_service = DeliveryService(
@@ -56,9 +63,11 @@ def create_app() -> Flask:
 
     app.extensions['repository'] = repository
     app.extensions['delivery_service'] = delivery_service
+    app.extensions['mapping_service'] = mapping_service
 
     app.register_blueprint(create_ingest_blueprint(ingest_service))
     app.register_blueprint(create_results_blueprint(repository))
+    app.register_blueprint(create_mapping_blueprint(mapping_service))
 
     @app.route('/')
     def dashboard():
@@ -71,6 +80,10 @@ def create_app() -> Flask:
     @app.route('/settings')
     def settings():
         return render_template('settings.html')
+
+    @app.route('/mappings')
+    def mappings():
+        return render_template('mappings.html')
 
     @app.route('/api/config', methods=['GET'])
     def get_config():
@@ -152,6 +165,7 @@ def create_app() -> Flask:
                 api_url=app.config['API_URL'],
                 api_key=app.config['API_KEY'],
                 timeout=app.config['API_TIMEOUT'],
+                mapping_service=app.extensions['mapping_service']
             )
 
             logger.info('Configuration updated and API client hot-reloaded')
