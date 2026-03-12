@@ -48,6 +48,10 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Database files
+*.db
+messages.db
+
 # Testing
 .pytest_cache/
 .coverage
