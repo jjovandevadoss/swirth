@@ -240,6 +240,35 @@
                 <h2><i class="fas fa-book-open"></i> Analyzer Setup Guide</h2>
             </div>
             <div class="card-body">
+                <!-- IP Address Help -->
+                <div style="background:#f0f9ff;border:2px solid #0ea5e9;border-radius:8px;padding:1.25rem;margin-bottom:1.5rem;">
+                    <div style="display:flex;gap:1rem;align-items:start;">
+                        <div style="flex-shrink:0;width:36px;height:36px;background:#0ea5e9;border-radius:50%;display:flex;align-items:center;justify-content:center;">
+                            <i class="fas fa-question" style="color:white;font-size:1.1rem;"></i>
+                        </div>
+                        <div style="flex:1;">
+                            <h3 style="margin:0 0 0.75rem 0;font-size:1rem;font-weight:700;color:#0c4a6e;">What IP address do I enter on the analyzer?</h3>
+                            <p style="margin:0 0 0.75rem 0;font-size:0.9rem;color:#075985;line-height:1.6;">
+                                <b>You enter the IP address of THIS computer</b> (the machine running Swirth) into your analyzer's LIS/Host settings.
+                                The analyzer will connect <b>TO</b> this machine, not the other way around.
+                            </p>
+                            <div style="background:white;border:1px solid #bae6fd;border-radius:6px;padding:0.9rem;margin-bottom:0.75rem;">
+                                <div style="font-weight:600;font-size:0.85rem;color:#0c4a6e;margin-bottom:0.5rem;">To find this machine's IP address:</div>
+                                <div style="font-family:'SF Mono','Fira Code',monospace;font-size:0.82rem;color:#334155;">
+                                    <div style="margin-bottom:0.4rem;"><b style="color:#0369a1;">macOS:</b> Open System Settings → Network → select your connection → look for "IP Address"</div>
+                                    <div style="margin-bottom:0.4rem;"><b style="color:#0369a1;">Windows:</b> Open Command Prompt → type <code style="background:#f1f5f9;padding:2px 6px;border-radius:3px;">ipconfig</code> → look for "IPv4 Address"</div>
+                                    <div><b style="color:#0369a1;">Linux:</b> Open terminal → type <code style="background:#f1f5f9;padding:2px 6px;border-radius:3px;">ip addr</code> or <code style="background:#f1f5f9;padding:2px 6px;border-radius:3px;">hostname -I</code></div>
+                                </div>
+                            </div>
+                            <div style="background:#fffbeb;border:1px solid #fbbf24;border-radius:6px;padding:0.75rem;font-size:0.85rem;color:#78350f;">
+                                <b>Example:</b> If this computer's IP is <code style="background:white;padding:2px 5px;border-radius:3px;">192.168.1.100</code>, you would enter:<br>
+                                <span style="margin-top:0.4rem;display:block;padding-left:1rem;">• <b>Host IP:</b> <code style="background:white;padding:2px 5px;border-radius:3px;">192.168.1.100</code> (on the analyzer)<br>
+                                • <b>Port:</b> <code style="background:white;padding:2px 5px;border-radius:3px;">7000</code> for ASTM or <code style="background:white;padding:2px 5px;border-radius:3px;">6000</code> for HL7 (on the analyzer)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="guide-tabs">
                     <button class="guide-tab active" onclick="switchGuide('astm',this)">ASTM / LIS2-A2 Analyzer</button>
                     <button class="guide-tab" onclick="switchGuide('hl7',this)">HL7 / MLLP Analyzer</button>
@@ -260,9 +289,13 @@
                             </div>
                         </li>
                         <li class="guide-step"><span class="guide-num">3</span>
-                            <div class="guide-body"><b>Enter the Host IP and Port.</b>
-                                Set the host IP to the IP address of this machine and the port to the <b>ASTM Port</b> below (default <code>7000</code>).
-                                The analyzer acts as the <em>TCP Client</em>; this server is the <em>TCP Server / Listener</em>.
+                            <div class="guide-body"><b>Configure the analyzer to connect to THIS machine.</b>
+                                On the analyzer, in the <em>Host IP</em> or <em>LIS Server</em> field, enter <b>this computer's IP address</b> (see blue box above for how to find it).
+                                In the <em>Port</em> field, enter the <b>ASTM Port</b> shown in the Listener Settings below (default <code>7000</code>).<br>
+                                <span style="display:block;margin-top:0.5rem;padding:0.5rem 0.75rem;background:#f8fafc;border-left:3px solid #0ea5e9;font-size:0.85rem;">
+                                    <b>Example:</b> If this computer is <code>192.168.1.100</code>, enter Host=<code>192.168.1.100</code> Port=<code>7000</code> on the analyzer.
+                                </span>
+                                The analyzer acts as the <em>TCP Client</em>; this server is the <em>TCP Listener</em> waiting for the connection.
                             </div>
                         </li>
                         <li class="guide-step"><span class="guide-num">4</span>
@@ -305,8 +338,12 @@
                             </div>
                         </li>
                         <li class="guide-step"><span class="guide-num">3</span>
-                            <div class="guide-body"><b>Enter the Host IP and Port.</b>
-                                Set the host IP to this machine's IP and the port to the <b>MLLP Port</b> below (default <code>6000</code>).
+                            <div class="guide-body"><b>Configure the analyzer to connect to THIS machine.</b>
+                                On the analyzer, in the <em>Host IP</em> or <em>HL7 Server</em> field, enter <b>this computer's IP address</b> (see blue box at top).
+                                In the <em>Port</em> field, enter the <b>MLLP Port</b> shown in Listener Settings below (default <code>6000</code>).<br>
+                                <span style="display:block;margin-top:0.5rem;padding:0.5rem 0.75rem;background:#f8fafc;border-left:3px solid #0ea5e9;font-size:0.85rem;">
+                                    <b>Example:</b> If this computer is <code>192.168.1.100</code>, enter Host=<code>192.168.1.100</code> Port=<code>6000</code> on the analyzer.
+                                </span>
                             </div>
                         </li>
                         <li class="guide-step"><span class="guide-num">4</span>
@@ -341,8 +378,13 @@
                         </li>
                         <li class="guide-step"><span class="guide-num">2</span>
                             <div class="guide-body"><b>Use the correct endpoint for your message type:</b>
-                                <span class="code-block">POST http://&lt;this-machine-ip&gt;:<span class="js-http-port">5001</span>/hl7/receive   (raw HL7 text body)
-POST http://&lt;this-machine-ip&gt;:<span class="js-http-port">5001</span>/astm/receive  (raw ASTM text body)</span>
+                                <span class="code-block">POST http://<b>&lt;this-machine-ip&gt;</b>:<span class="js-http-port">5001</span>/hl7/receive   (raw HL7 text body)
+POST http://<b>&lt;this-machine-ip&gt;</b>:<span class="js-http-port">5001</span>/astm/receive  (raw ASTM text body)</span>
+                                Replace <code>&lt;this-machine-ip&gt;</code> with this computer's actual IP address (see blue box at top).<br>
+                                <span style="display:block;margin-top:0.5rem;padding:0.5rem 0.75rem;background:#f8fafc;border-left:3px solid #0ea5e9;font-size:0.85rem;">
+                                    <b>Example:</b> If this machine is <code>192.168.1.100</code>, use:<br>
+                                    <code>http://192.168.1.100:5001/hl7/receive</code>
+                                </span>
                                 Send the raw message as the request body with <code>Content-Type: text/plain</code>.
                             </div>
                         </li>
@@ -378,9 +420,17 @@ Content-Type: application/json
                     <!-- Listener Settings -->
                     <div class="form-section">
                         <div class="section-title"><i class="fas fa-server"></i> Listener Settings</div>
+                        <div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:0.85rem;margin-bottom:1.25rem;font-size:0.87rem;color:#78350f;">
+                            <b style="display:block;margin-bottom:0.4rem;"><i class="fas fa-info-circle"></i> About the "Host" fields below:</b>
+                            These control <b>where this server listens</b>, NOT where it connects to. Your analyzer connects <b>TO</b> these ports.<br>
+                            <span style="display:block;margin-top:0.5rem;">
+                                • <code style="background:white;padding:2px 5px;border-radius:3px;">0.0.0.0</code> = listen on all network interfaces (recommended — allows connections from any network)<br>
+                                • A specific IP (e.g., <code style="background:white;padding:2px 5px;border-radius:3px;">192.168.1.100</code>) = only accept connections on that interface<br>
+                                • <b>Tip:</b> Leave as <code style="background:white;padding:2px 5px;border-radius:3px;">0.0.0.0</code> unless you have a specific security reason to restrict it.
+                            </span>
+                        </div>
                         <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1.25rem;">
-                            These TCP/HTTP addresses are bound at startup. Port or host changes require an app restart.
-                            Use <code style="background:#f1f5f9;padding:0 3px;border-radius:3px;">0.0.0.0</code> to accept connections on all network interfaces.
+                            Port or host changes require an app restart.
                         </p>
 
                         <!-- HTTP -->
@@ -435,12 +485,16 @@ Content-Type: application/json
                         </div>
 
                         <div class="info-box">
-                            <strong><i class="fas fa-plug"></i> Active Connection Addresses — point your analyzer here</strong>
-                            <ul>
-                                <li>HTTP ingest: <span class="info-span">http://<span id="currentHost">…</span>:<span id="currentPort">…</span>/hl7/receive</span> &amp; <span class="info-span">/astm/receive</span></li>
-                                <li>MLLP (HL7): <span class="info-span"><span id="currentMllpHost">…</span>:<span id="currentMllpPort">…</span></span></li>
-                                <li>ASTM TCP:   <span class="info-span"><span id="currentAstmHost">…</span>:<span id="currentAstmPort">…</span></span></li>
+                            <strong><i class="fas fa-plug"></i> Current Listener Configuration</strong>
+                            <ul style="margin-bottom:0.75rem;">
+                                <li>HTTP bound to: <span class="info-span"><span id="currentHost">…</span>:<span id="currentPort">…</span></span></li>
+                                <li>MLLP bound to: <span class="info-span"><span id="currentMllpHost">…</span>:<span id="currentMllpPort">…</span></span></li>
+                                <li>ASTM bound to: <span class="info-span"><span id="currentAstmHost">…</span>:<span id="currentAstmPort">…</span></span></li>
                             </ul>
+                            <div style="font-size:0.82rem;padding-top:0.5rem;border-top:1px solid #cbd5e1;color:#0c4a6e;">
+                                <b>⚠️ Important:</b> If the Host above shows <code style="background:rgba(255,255,255,0.6);padding:0 3px;">0.0.0.0</code>, you must use <b>this computer's actual IP address</b> (not 0.0.0.0) when configuring your analyzer.
+                                See the blue help box at the top of this page for how to find your IP.
+                            </div>
                         </div>
                     </div>
 
