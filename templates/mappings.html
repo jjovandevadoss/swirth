@@ -19,8 +19,6 @@
             --border-color: #e2e8f0;
             --card-bg: #ffffff;
             --header-height: 60px;
-            --info-bg: #eff6ff;
-            --info-border: #bfdbfe;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -74,59 +72,13 @@
         main {
             flex: 1;
             padding: 2rem;
-            max-width: 1600px;
+            max-width: 1800px;
             margin: 0 auto;
             width: 100%;
             display: flex;
             flex-direction: column;
             gap: 1.5rem;
             overflow-y: auto;
-        }
-
-        .info-banner {
-            background: var(--info-bg);
-            border: 1px solid var(--info-border);
-            border-radius: 8px;
-            padding: 1rem 1.25rem;
-            display: flex;
-            align-items: start;
-            gap: 1rem;
-        }
-        .info-banner i {
-            color: var(--primary-color);
-            font-size: 1.25rem;
-            margin-top: 0.125rem;
-        }
-        .info-banner .close-btn {
-            margin-left: auto;
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            cursor: pointer;
-            font-size: 1.25rem;
-            padding: 0;
-            width: 1.5rem;
-            height: 1.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 4px;
-        }
-        .info-banner .close-btn:hover {
-            background: rgba(37, 99, 235, 0.1);
-            color: var(--primary-color);
-        }
-        .info-banner h3 {
-            font-size: 0.95rem;
-            margin-bottom: 0.25rem;
-        }
-        .info-banner p {
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            line-height: 1.4;
-        }
-        .info-banner.hidden {
-            display: none;
         }
 
         .card {
@@ -147,28 +99,198 @@
             align-items: center;
             border-radius: 8px 8px 0 0;
         }
-        .card-header .help-icon {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            cursor: help;
-            margin-left: 0.5rem;
-        }
-        .card-header .help-icon:hover {
-            color: var(--primary-color);
-        }
 
         .card-body { padding: 1.5rem; }
 
-        .mapping-layout {
+        /* Info Banner */
+        .info-banner {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            display: flex;
+            align-items: start;
+            gap: 1rem;
+        }
+        .info-banner i { color: var(--primary-color); font-size: 1.25rem; }
+        .info-banner-content { flex: 1; }
+        .info-banner-content h4 {
+            font-size: 0.95rem;
+            margin-bottom: 0.25rem;
+           color: var(--text-color);
+        }
+        .info-banner-content p {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        /* Message Browser Section */
+        .message-browser-layout {
             display: grid;
-            grid-template-columns: 1fr 1.5fr 500px;
+            grid-template-columns: 300px 1fr;
             gap: 1.5rem;
         }
 
-        @media (max-width: 1400px) {
-            .mapping-layout {
-                grid-template-columns: 1fr;
-            }
+        .message-list-card {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .message-list-item {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: all 0.15s;
+            border-left: 3px solid transparent;
+        }
+        .message-list-item:hover {
+            background: #f8fafc;
+        }
+        .message-list-item.selected {
+            background: #eff6ff;
+            border-left-color: var(--primary-color);
+        }
+        .message-list-item .msg-top {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.25rem;
+        }
+        .message-list-item .protocol-tag {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        .message-list-item .msg-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .message-list-item .msg-patient {
+            font-size: 0.85rem;
+            color: var(--text-color);
+            font-weight: 500;
+        }
+
+        .empty-messages {
+            text-align: center;
+            padding: 3rem 1.5rem;
+            color: var(--text-muted);
+        }
+        .empty-messages i {
+            font-size: 3rem;
+            color: var(--border-color);
+            margin-bottom: 1rem;
+        }
+
+        /* Interactive Field Browser */
+        .field-browser {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            max-height: 350px;
+            overflow-y: auto;
+        }
+
+        .json-line {
+            padding: 2px 0;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+        .json-line:hover {
+            background: #f1f5f9;
+        }
+        .json-line.clickable-field {
+            position: relative;
+        }
+        .json-line.clickable-field:hover {
+            background: #dbeafe;
+        }
+        .json-line.clickable-field:hover::before {
+            content: '← Click to use';
+            position: absolute;
+            right: 10px;
+            background: var(--primary-color);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
+        }
+
+        .json-key {
+            color: #0369a1;
+            font-weight: 500;
+        }
+        .json-value {
+            color: #15803d;
+        }
+        .json-string {
+            color: #b45309;
+        }
+        .json-bracket {
+            color: #64748b;
+            font-weight: bold;
+        }
+        .json-indent {
+            display: inline-block;
+            width: 1.5em;
+        }
+
+        /* Raw Message Display */
+        .raw-message {
+            background: #1e293b;
+            color: #e2e8f0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            padding: 1rem;
+            border-radius: 6px;
+            max-height: 350px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.6;
+        }
+
+        /* View Tabs */
+        .view-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid var(--border-color);
+        }
+        .view-tab {
+            padding: 0.625rem 1.25rem;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            cursor: pointer;
+            font-weight: 500;
+            color: var(--text-muted);
+            transition: all 0.15s;
+            font-size: 0.9rem;
+        }
+        .view-tab:hover {
+            color: var(--primary-color);
+        }
+        .view-tab.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+        }
+        .view-content {
+            display: none;
+        }
+        .view-content.active {
+            display: block;
+        }
+
+        /* Mapping Layout */
+        .mapping-layout {
+            display: grid;
+            grid-template-columns: 1fr 1.5fr 400px;
+            gap: 1.5rem;
         }
 
         /* Profile Manager */
@@ -182,13 +304,6 @@
             margin-bottom: 0.5rem;
             color: var(--text-color);
         }
-        .form-group .help-text {
-            display: block;
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            margin-top: 0.25rem;
-            font-weight: normal;
-        }
         .form-group input, .form-group select, .form-group textarea {
             width: 100%;
             padding: 0.625rem;
@@ -196,24 +311,12 @@
             border-radius: 6px;
             font-size: 0.9rem;
             font-family: inherit;
-            transition: all 0.15s;
+            transition: border-color 0.15s;
         }
         .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
             outline: none;
             border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-        }
-        .form-group input.error, .form-group textarea.error {
-            border-color: var(--danger-color);
-        }
-        .form-group .error-message {
-            color: var(--danger-color);
-            font-size: 0.8rem;
-            margin-top: 0.25rem;
-            display: none;
-        }
-        .form-group .error-message.show {
-            display: block;
         }
         .form-group textarea { resize: vertical; min-height: 60px; }
 
@@ -235,7 +338,6 @@
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            white-space: nowrap;
         }
         .btn:disabled {
             opacity: 0.5;
@@ -245,19 +347,13 @@
             background-color: var(--primary-color);
             color: white;
         }
-        .btn-primary:hover:not(:disabled) { 
-            background-color: var(--primary-hover);
-            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
-        }
+        .btn-primary:hover:not(:disabled) { background-color: var(--primary-hover); }
         
         .btn-success {
             background-color: var(--success-color);
             color: white;
         }
-        .btn-success:hover:not(:disabled) { 
-            background-color: #059669;
-            box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
-        }
+        .btn-success:hover:not(:disabled) { background-color: #059669; }
         
         .btn-secondary {
             background-color: #e2e8f0;
@@ -269,10 +365,7 @@
             background-color: var(--danger-color);
             color: white;
         }
-        .btn-danger:hover:not(:disabled) { 
-            background-color: #dc2626;
-            box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-        }
+        .btn-danger:hover:not(:disabled) { background-color: #dc2626; }
 
         .btn-sm {
             padding: 0.375rem 0.75rem;
@@ -306,64 +399,11 @@
             font-weight: 600;
         }
 
-        /* Quick Start Templates */
-        .template-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 0.75rem;
-            margin-bottom: 1.5rem;
-        }
-        .template-card {
-            padding: 0.875rem;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.15s;
-            text-align: center;
-        }
-        .template-card:hover {
-            border-color: var(--primary-color);
-            background: var(--info-bg);
-            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.1);
-        }
-        .template-card i {
-            font-size: 1.5rem;
-            color: var(--primary-color);
-            margin-bottom: 0.5rem;
-        }
-        .template-card .title {
-            font-weight: 600;
-            font-size: 0.85rem;
-            margin-bottom: 0.25rem;
-        }
-        .template-card .desc {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-
         /* Mapping Rules Table */
-        .rules-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-        .rules-help {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-        }
-        .rules-help a {
-            color: var(--primary-color);
-            text-decoration: none;
-            font-weight: 500;
-        }
-        .rules-help a:hover {
-            text-decoration: underline;
-        }
-
         .rules-table {
             width: 100%;
             border-collapse: collapse;
+            margin-top: 1rem;
         }
         .rules-table th {
             background: #f8fafc;
@@ -373,21 +413,10 @@
             font-size: 0.85rem;
             border-bottom: 2px solid var(--border-color);
             color: var(--text-muted);
-            position: relative;
-        }
-        .rules-table th .tooltip-icon {
-            cursor: help;
-            color: var(--text-muted);
-            font-size: 0.75rem;
-            margin-left: 0.25rem;
-        }
-        .rules-table th .tooltip-icon:hover {
-            color: var(--primary-color);
         }
         .rules-table td {
             padding: 0.75rem;
             border-bottom: 1px solid var(--border-color);
-            vertical-align: middle;
         }
         .rules-table input, .rules-table select {
             width: 100%;
@@ -395,20 +424,10 @@
             border: 1px solid var(--border-color);
             border-radius: 4px;
             font-size: 0.85rem;
-            transition: all 0.15s;
         }
         .rules-table input:focus, .rules-table select:focus {
             outline: none;
             border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-        }
-        .rules-table input.error {
-            border-color: var(--danger-color);
-            background: rgb(254, 242, 242);
-        }
-        .rules-table input::placeholder {
-            color: #cbd5e1;
-            font-size: 0.8rem;
         }
         .rules-table tbody tr:hover {
             background: #f8fafc;
@@ -432,8 +451,8 @@
             transition: all 0.15s;
         }
         .field-input-group .btn-icon:hover {
-            background: var(--primary-color);
-            color: white;
+            background: #f8fafc;
+            color: var(--primary-color);
             border-color: var(--primary-color);
         }
 
@@ -448,26 +467,9 @@
             margin-bottom: 1rem;
         }
         .empty-state h3 {
-            font-size: 1rem;
+            font-size: 1.1rem;
             margin-bottom: 0.5rem;
             color: var(--text-color);
-        }
-        .empty-state p {
-            font-size: 0.875rem;
-            line-height: 1.5;
-            max-width: 400px;
-            margin: 0 auto;
-        }
-        .empty-state .example {
-            background: #f8fafc;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            padding: 0.75rem;
-            margin-top: 1rem;
-            font-family: 'Courier New', monospace;
-            font-size: 0.8rem;
-            text-align: left;
-            display: inline-block;
         }
 
         /* Preview Panel */
@@ -476,41 +478,13 @@
             gap: 0.75rem;
             align-items: center;
             margin-bottom: 1rem;
-            flex-wrap: wrap;
         }
         .preview-controls select {
             flex: 1;
-            min-width: 150px;
             padding: 0.5rem;
             border: 1px solid var(--border-color);
             border-radius: 6px;
             font-size: 0.85rem;
-        }
-
-        .preview-tabs {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 1rem;
-            border-bottom: 2px solid var(--border-color);
-        }
-        .preview-tab {
-            padding: 0.5rem 1rem;
-            background: none;
-            border: none;
-            border-bottom: 2px solid transparent;
-            margin-bottom: -2px;
-            cursor: pointer;
-            font-weight: 500;
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            transition: all 0.15s;
-        }
-        .preview-tab:hover {
-            color: var(--primary-color);
-        }
-        .preview-tab.active {
-            color: var(--primary-color);
-            border-bottom-color: var(--primary-color);
         }
 
         .json-preview {
@@ -518,163 +492,10 @@
             border: 1px solid var(--border-color);
             border-radius: 6px;
             padding: 1rem;
-            max-height: 450px;
+            max-height: 400px;
             overflow: auto;
             font-family: 'Courier New', monospace;
             font-size: 0.85rem;
-            display: none;
-        }
-        .json-preview.active {
-            display: block;
-        }
-        .json-preview pre {
-            margin: 0;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-
-        /* Modal */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-            padding: 2rem;
-            animation: fadeIn 0.15s;
-        }
-        .modal.active { display: flex; }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        .modal-content {
-            background: white;
-            border-radius: 8px;
-            max-width: 900px;
-            width: 100%;
-            max-height: 85vh;
-            display: flex;
-            flex-direction: column;
-            animation: slideUp 0.2s;
-        }
-        
-        @keyframes slideUp {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-
-        .modal-header {
-            padding: 1.25rem 1.5rem;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .modal-header h3 {
-            font-size: 1.1rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .modal-close {
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            color: var(--text-muted);
-            cursor: pointer;
-            padding: 0;
-            width: 2rem;
-            height: 2rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 4px;
-            transition: all 0.15s;
-        }
-        .modal-close:hover {
-            background: #f8fafc;
-            color: var(--text-color);
-        }
-        .modal-body {
-            padding: 1.5rem;
-            overflow-y: auto;
-        }
-
-        /* Field Browser Tree */
-        .field-search {
-            margin-bottom: 1rem;
-        }
-        .field-search input {
-            width: 100%;
-            padding: 0.625rem;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            font-size: 0.9rem;
-        }
-        .field-search input:focus {
-            outline: none;
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-        }
-
-        .field-tree {
-            font-size: 0.9rem;
-        }
-        .field-tree ul {
-            list-style: none;
-            padding-left: 1.5rem;
-        }
-        .field-tree > ul {
-            padding-left: 0;
-        }
-        .field-tree li {
-            margin: 0.25rem 0;
-        }
-        .field-node {
-            padding: 0.5rem 0.75rem;
-            cursor: pointer;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            transition: all 0.15s;
-        }
-        .field-node:hover {
-            background: #f1f5f9;
-        }
-        .field-node.selected {
-            background: #dbeafe;
-            color: var(--primary-color);
-            font-weight: 500;
-        }
-        .field-node i {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            width: 1rem;
-        }
-        .field-node.selected i {
-            color: var(--primary-color);
-        }
-        .field-path {
-            font-family: 'Courier New', monospace;
-            font-size: 0.85rem;
-            flex: 1;
-        }
-        .field-type {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            background: #f1f5f9;
-            padding: 0.125rem 0.5rem;
-            border-radius: 3px;
         }
 
         /* Toast Notification */
@@ -686,123 +507,31 @@
             border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 1rem 1.25rem;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             display: none;
             align-items: center;
             gap: 0.75rem;
             z-index: 2000;
             max-width: 400px;
-            animation: slideInRight 0.3s;
         }
         .toast.active { display: flex; }
-        
-        @keyframes slideInRight {
-            from { transform: translateX(400px); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-
         .toast.success { border-left: 4px solid var(--success-color); }
         .toast.error { border-left: 4px solid var(--danger-color); }
         .toast.info { border-left: 4px solid var(--primary-color); }
-        .toast.warning { border-left: 4px solid var(--warning-color); }
         .toast i {
             font-size: 1.25rem;
         }
         .toast.success i { color: var(--success-color); }
         .toast.error i { color: var(--danger-color); }
         .toast.info i { color: var(--primary-color); }
-        .toast.warning i { color: var(--warning-color); }
 
-        .protocol-tabs {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 1rem;
-        }
-        .protocol-tab {
-            padding: 0.5rem 1rem;
-            border: 1px solid var(--border-color);
-            background: white;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.85rem;
-            font-weight: 500;
-            transition: all 0.15s;
-        }
-        .protocol-tab:hover {
-            background: #f8fafc;
-            border-color: var(--primary-color);
-        }
-        .protocol-tab.active {
-            background: var(--primary-color);
-            color: white;
-            border-color: var(--primary-color);
-        }
-
-        /* Tooltips */
-        .tooltip {
-            position: relative;
-            display: inline-block;
-        }
-        .tooltip .tooltiptext {
-            visibility: hidden;
-            width: 200px;
-            background-color: #1e293b;
-            color: #fff;
-            text-align: center;
-            border-radius: 6px;
-            padding: 0.5rem;
-            position: absolute;
-            z-index: 1;
-            bottom: 125%;
-            left: 50%;
-            margin-left: -100px;
-            opacity: 0;
-            transition: opacity 0.3s;
-            font-size: 0.75rem;
-            line-height: 1.4;
-        }
-        .tooltip .tooltiptext::after {
-            content: "";
-            position: absolute;
-            top: 100%;
-            left: 50%;
-            margin-left: -5px;
-            border-width: 5px;
-            border-style: solid;
-            border-color: #1e293b transparent transparent transparent;
-        }
-        .tooltip:hover .tooltiptext {
-            visibility: visible;
-            opacity: 1;
-        }
-
-        /* Validation feedback */
-        .validation-icon {
-            position: absolute;
-            right: 0.5rem;
-            top: 50%;
-            transform: translateY(-50%);
-            font-size: 0.9rem;
-        }
-        .validation-icon.valid {
-            color: var(--success-color);
-        }
-        .validation-icon.invalid {
-            color: var(--danger-color);
-        }
-
-        /* Loading */
-        .spinner {
-            border: 2px solid #f3f3f3;
-            border-top: 2px solid var(--primary-color);
-            border-radius: 50%;
-            width: 1rem;
-            height: 1rem;
-            animation: spin 0.8s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        @media (max-width: 1400px) {
+            .mapping-layout {
+                grid-template-columns: 1fr;
+            }
+            .message-browser-layout {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -820,97 +549,115 @@
     </header>
 
     <main>
-        <!-- Help Banner -->
-        <div class="info-banner" id="helpBanner">
+        <!-- Info Banner -->
+        <div class="info-banner">
             <i class="fas fa-lightbulb"></i>
-            <div style="flex: 1;">
-                <h3>Welcome to Field Mappings!</h3>
-                <p>Map HL7/ASTM message fields to your custom output format. Create a profile, add mapping rules, test with sample data, then activate it to transform all incoming messages.</p>
+            <div class="info-banner-content">
+                <h4>How to create field mappings</h4>
+                <p><strong>Step 1:</strong> Select a real message below to see actual field structure → <strong>Step 2:</strong> Click on fields you want to map → <strong>Step 3:</strong> Name your output fields → <strong>Step 4:</strong> Save and activate your profile</p>
             </div>
-            <button class="close-btn" onclick="closeHelpBanner()">
-                <i class="fas fa-times"></i>
-            </button>
         </div>
 
+        <!-- Message Browser -->
+        <div class="card">
+            <div class="card-header">
+                <span><i class="fas fa-inbox"></i> Browse Real Messages (Click on fields below to add them to your mapping)</span>
+                <button class="btn btn-sm btn-secondary" onclick="loadRecentMessages()">
+                    <i class="fas fa-sync"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="message-browser-layout">
+                    <!-- Message List -->
+                    <div>
+                        <div id="messageListContainer" class="message-list-card">
+                            <div class="empty-messages">
+                                <i class="fas fa-inbox"></i>
+                                <p>Loading recent messages...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Field Browser -->
+                    <div>
+                        <div id="fieldBrowserView" style="display: none;">
+                            <div style="margin-bottom: 1rem; padding: 0.75rem; background: #fef3c7; border: 1px solid #fbbf24; border-radius: 6px;">
+                                <i class="fas fa-hand-pointer" style="color: #b45309;"></i>
+                                <strong style="color: #78350f;">Click on any field below to add it to your mapping rules</strong>
+                            </div>
+                            
+                            <!-- View Tabs -->
+                            <div class="view-tabs">
+                                <button class="view-tab active" onclick="switchView('parsed')">
+                                    <i class="fas fa-sitemap"></i> Parsed Fields
+                                </button>
+                                <button class="view-tab" onclick="switchView('raw')">
+                                    <i class="fas fa-file-code"></i> Raw Message
+                                </button>
+                            </div>
+                            
+                            <!-- Parsed View -->
+                            <div id="parsedView" class="view-content active">
+                                <div class="field-browser" id="parsedDataView"></div>
+                            </div>
+                            
+                            <!-- Raw View -->
+                            <div id="rawView" class="view-content">
+                                <div class="raw-message" id="rawMessageView"></div>
+                            </div>
+                        </div>
+                        <div id="noMessageSelected" style="text-align: center; padding: 4rem 2rem; color: var(--text-muted);">
+                            <i class="fas fa-arrow-left" style="font-size: 3rem; color: var(--border-color); margin-bottom: 1rem;"></i>
+                            <p>Select a message from the list to view its fields</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mapping Configuration -->
         <div class="mapping-layout">
             <!-- Profile Manager -->
             <div class="card">
                 <div class="card-header">
-                    <span>
-                        <i class="fas fa-folder"></i> Mapping Profile
-                        <span class="tooltip">
-                            <i class="fas fa-question-circle help-icon"></i>
-                            <span class="tooltiptext">A profile contains all mapping rules to transform your message data</span>
-                        </span>
-                    </span>
+                    <span><i class="fas fa-folder"></i> Mapping Profile</span>
                     <span id="activeBadge" class="active-badge" style="display: none;">
                         <i class="fas fa-check-circle"></i> Active
                     </span>
                 </div>
                 <div class="card-body">
-                    <!-- Quick Start Templates -->
-                    <div id="templateSection" style="display: none;">
-                        <h4 style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-muted);">Quick Start Templates</h4>
-                        <div class="template-grid">
-                            <div class="template-card" onclick="loadTemplate('basic')">
-                                <i class="fas fa-file-alt"></i>
-                                <div class="title">Basic</div>
-                                <div class="desc">Patient ID + Results</div>
-                            </div>
-                            <div class="template-card" onclick="loadTemplate('detailed')">
-                                <i class="fas fa-list"></i>
-                                <div class="title">Detailed</div>
-                                <div class="desc">Full patient & order info</div>
-                            </div>
-                            <div class="template-card" onclick="loadTemplate('custom')">
-                                <i class="fas fa-magic"></i>
-                                <div class="title">Custom</div>
-                                <div class="desc">Start from scratch</div>
-                            </div>
-                        </div>
-                    </div>
-
                     <div class="profile-selector">
                         <select id="profileSelect">
                             <option value="">-- Select Profile --</option>
                         </select>
-                        <button class="btn btn-sm btn-secondary" onclick="newProfile()" title="Create new profile">
+                        <button class="btn btn-sm btn-secondary" onclick="newProfile()">
                             <i class="fas fa-plus"></i> New
                         </button>
-                        <button class="btn btn-sm btn-secondary" onclick="duplicateProfile()" id="btnDuplicate" disabled title="Duplicate current profile">
+                        <button class="btn btn-sm btn-secondary" onclick="duplicateProfile()" id="btnDuplicate" disabled>
                             <i class="fas fa-copy"></i>
                         </button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteProfile()" id="btnDelete" disabled title="Delete current profile">
+                        <button class="btn btn-sm btn-danger" onclick="deleteProfile()" id="btnDelete" disabled>
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
 
                     <div class="form-group">
                         <label for="profileName">Profile Name *</label>
-                        <input type="text" id="profileName" placeholder="e.g., Lab A Mapping" required>
-                        <span class="error-message" id="nameError">Profile name is required</span>
-                        <span class="help-text">Give your mapping profile a descriptive name</span>
+                        <input type="text" id="profileName" placeholder="e.g., Lab A Mapping">
                     </div>
 
                     <div class="form-group">
                         <label for="profileDescription">Description</label>
-                        <textarea id="profileDescription" placeholder="Optional: Describe when to use this mapping"></textarea>
+                        <textarea id="profileDescription" placeholder="Optional description"></textarea>
                     </div>
 
                     <div class="form-group">
-                        <label for="protocolFilter">
-                            Protocol Filter
-                            <span class="tooltip">
-                                <i class="fas fa-question-circle help-icon"></i>
-                                <span class="tooltiptext">Choose which message types this mapping applies to</span>
-                            </span>
-                        </label>
+                        <label for="protocolFilter">Protocol Filter</label>
                         <select id="protocolFilter">
-                            <option value="ALL">All Protocols (HL7 & ASTM)</option>
+                            <option value="ALL">All Protocols</option>
                             <option value="HL7">HL7 Only</option>
                             <option value="ASTM">ASTM Only</option>
                         </select>
-                        <span class="help-text">Optionally filter by message protocol</span>
                     </div>
 
                     <div class="button-group">
@@ -927,197 +674,57 @@
             <!-- Mapping Rules -->
             <div class="card">
                 <div class="card-header">
-                    <span>
-                        <i class="fas fa-list"></i> Mapping Rules
-                        <span class="tooltip">
-                            <i class="fas fa-question-circle help-icon"></i>
-                            <span class="tooltiptext">Define how source fields map to your output format</span>
-                        </span>
-                    </span>
+                    <span><i class="fas fa-list"></i> Mapping Rules</span>
                     <button class="btn btn-sm btn-primary" onclick="addMappingRule()">
                         <i class="fas fa-plus"></i> Add Rule
                     </button>
                 </div>
                 <div class="card-body">
-                    <div class="rules-header">
-                        <div class="rules-help">
-                            <a href="#" onclick="openFieldBrowserHelp(); return false;">
-                                <i class="fas fa-question-circle"></i> View field examples
-                            </a>
-                        </div>
-                    </div>
-                    <div id="rulesContainer">
-                        <table class="rules-table" id="rulesTable">
-                            <thead>
-                                <tr>
-                                    <th style="width: 38%;">
-                                        Source Field Path
-                                        <span class="tooltip">
-                                            <i class="fas fa-info-circle tooltip-icon"></i>
-                                            <span class="tooltiptext">Path to field in HL7/ASTM message (e.g., patient.id or observations[0].value)</span>
-                                        </span>
-                                    </th>
-                                    <th style="width: 38%;">
-                                        Target Field Name
-                                        <span class="tooltip">
-                                            <i class="fas fa-info-circle tooltip-icon"></i>
-                                            <span class="tooltiptext">Your custom field name in the output (e.g., patientId or testResult)</span>
-                                        </span>
-                                    </th>
-                                    <th style="width: 18%;">
-                                        Transform
-                                        <span class="tooltip">
-                                            <i class="fas fa-info-circle tooltip-icon"></i>
-                                            <span class="tooltiptext">Optional: Modify the value (uppercase, lowercase, trim)</span>
-                                        </span>
-                                    </th>
-                                    <th style="width: 6%;"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="rulesTableBody">
-                                <tr>
-                                    <td colspan="4">
-                                        <div class="empty-state">
-                                            <i class="fas fa-project-diagram"></i>
-                                            <h3>No mapping rules yet</h3>
-                                            <p>Click "Add Rule" to create your first mapping from an HL7/ASTM field to your custom output field.</p>
-                                            <div class="example">
-                                                <strong>Example:</strong><br>
-                                                Source: <code>patient.id</code><br>
-                                                Target: <code>patientIdentifier</code>
-                                            </div>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+                    <table class="rules-table" id="rulesTable">
+                        <thead>
+                            <tr>
+                                <th style="width: 40%;">Source Field Path</th>
+                                <th style="width: 40%;">Target Field Name</th>
+                                <th style="width: 15%;">Transform</th>
+                                <th style="width: 5%;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="rulesTableBody">
+                            <tr>
+                                <td colspan="4">
+                                    <div class="empty-state">
+                                        <i class="fas fa-project-diagram"></i>
+                                        <h3>No mapping rules yet</h3>
+                                        <p>Select a message above and click on fields to start mapping</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
             <!-- Preview Panel -->
             <div class="card">
                 <div class="card-header">
-                    <span>
-                        <i class="fas fa-eye"></i> Preview & Test
-                        <span class="tooltip">
-                            <i class="fas fa-question-circle help-icon"></i>
-                            <span class="tooltiptext">Test your mapping with sample data before activating</span>
-                        </span>
-                    </span>
+                    <span><i class="fas fa-eye"></i> Preview Output</span>
                 </div>
                 <div class="card-body">
                     <div class="preview-controls">
-                        <select id="sampleProtocol" onchange="loadSampleData()">
-                            <option value="HL7">HL7 Sample Data</option>
-                            <option value="ASTM">ASTM Sample Data</option>
-                        </select>
-                        <button class="btn btn-sm btn-primary" onclick="previewMapping()">
-                            <i class="fas fa-play"></i> Test Mapping
+                        <button class="btn btn-sm btn-primary" onclick="previewMapping()" style="width: 100%;">
+                            <i class="fas fa-play"></i> Test Mapping with Selected Message
                         </button>
                     </div>
-
-                    <div class="preview-tabs">
-                        <button class="preview-tab active" onclick="switchPreviewTab('input')">
-                            <i class="fas fa-file-import"></i> Input Sample
-                        </button>
-                        <button class="preview-tab" onclick="switchPreviewTab('output')">
-                            <i class="fas fa-file-export"></i> Output Result
-                        </button>
-                    </div>
-
-                    <div class="json-preview active" id="previewInput">
-                        <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
-                            <i class="fas fa-info-circle" style="font-size: 2rem; margin-bottom: 0.5rem;"></i>
-                            <p>Sample HL7/ASTM data will appear here</p>
-                        </div>
-                    </div>
-
                     <div class="json-preview" id="previewOutput">
                         <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
-                            <i class="fas fa-magic" style="font-size: 2rem; margin-bottom: 0.5rem;"></i>
-                            <p>Configure mapping rules and click "Test Mapping" to see transformed output</p>
+                            <i class="fas fa-info-circle" style="font-size: 2rem; margin-bottom: 0.5rem;"></i>
+                            <p>Add mapping rules and click "Test Mapping" to preview output</p>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </main>
-
-    <!-- Field Browser Modal -->
-    <div class="modal" id="fieldBrowserModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3><i class="fas fa-sitemap"></i> Browse Available Fields</h3>
-                <button class="modal-close" onclick="closeFieldBrowser()">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="field-search">
-                    <input type="text" placeholder="Search fields..." id="fieldSearchInput" onkeyup="filterFields()">
-                </div>
-                <div class="protocol-tabs">
-                    <button class="protocol-tab active" onclick="switchProtocolTab('HL7')">
-                        <i class="fas fa-hospital"></i> HL7 Fields
-                    </button>
-                    <button class="protocol-tab" onclick="switchProtocolTab('ASTM')">
-                        <i class="fas fa-vial"></i> ASTM Fields
-                    </button>
-                </div>
-                <div class="field-tree" id="fieldTree"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Help Modal -->
-    <div class="modal" id="helpModal">
-        <div class="modal-content" style="max-width: 700px;">
-            <div class="modal-header">
-                <h3><i class="fas fa-question-circle"></i> Field Mapping Examples</h3>
-                <button class="modal-close" onclick="closeHelpModal()">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <h4 style="margin-bottom: 0.75rem;">Common Field Path Examples:</h4>
-                <table style="width: 100%; font-size: 0.85rem; border-collapse: collapse;">
-                    <tr style="background: #f8fafc;">
-                        <th style="padding: 0.5rem; text-align: left; border: 1px solid var(--border-color);">Source Path</th>
-                        <th style="padding: 0.5rem; text-align: left; border: 1px solid var(--border-color);">Description</th>
-                    </tr>
-                    <tr>
-                        <td style="padding: 0.5rem; border: 1px solid var(--border-color); font-family: monospace;">patient.id</td>
-                        <td style="padding: 0.5rem; border: 1px solid var(--border-color);">Patient ID</td>
-                    </tr>
-                    <tr style="background: #f8fafc;">
-                        <td style="padding: 0.5rem; border: 1px solid var(--border-color); font-family: monospace;">patient.name.family_name</td>
-                        <td style="padding: 0.5rem; border: 1px solid var(--border-color);">Patient last name (nested field)</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 0.5rem; border: 1px solid var(--border-color); font-family: monospace;">observations[0].value</td>
-                        <td style="padding: 0.5rem; border: 1px solid var(--border-color);">First observation value (array index)</td>
-                    </tr>
-                    <tr style="background: #f8fafc;">
-                        <td style="padding: 0.5rem; border: 1px solid var(--border-color); font-family: monospace;">observations[*].value</td>
-                        <td style="padding: 0.5rem; border: 1px solid var(--border-color);">All observation values (array iteration)</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 0.5rem; border: 1px solid var(--border-color); font-family: monospace;">orders[0].universal_service_id</td>
-                        <td style="padding: 0.5rem; border: 1px solid var(--border-color);">Test/order name</td>
-                    </tr>
-                </table>
-                
-                <h4 style="margin-top: 1.5rem; margin-bottom: 0.75rem;">Tips:</h4>
-                <ul style="font-size: 0.85rem; line-height: 1.8; padding-left: 1.5rem;">
-                    <li>Use <code>.</code> (dot) to access nested fields: <code>patient.name.given_name</code></li>
-                    <li>Use <code>[0]</code> to get a specific array item: <code>observations[0]</code></li>
-                    <li>Use <code>[*]</code> to map all array items: <code>observations[*].value</code></li>
-                    <li>Click the <i class="fas fa-sitemap" style="color: var(--primary-color);"></i> icon to browse available fields</li>
-                </ul>
-            </div>
-        </div>
-    </div>
 
     <!-- Toast Notification -->
     <div class="toast" id="toast">
@@ -1129,24 +736,200 @@
     <script src="https://cdn.jsdelivr.net/npm/jquery.json-viewer@1.5.0/json-viewer/jquery.json-viewer.js"></script>
     <script>
         let currentProfileId = null;
-        let sampleData = {};
-        let currentInputTarget = null;
-        let originalSampleData = {};
+        let selectedMessage = null;
+        let recentMessages = [];
 
         // Initialize
         $(document).ready(function() {
             loadProfiles();
-            loadSampleData();
-            
-            // Check if user has closed help banner before
-            if (localStorage.getItem('hideHelpBanner') === 'true') {
-                $('#helpBanner').addClass('hidden');
-            }
+            loadRecentMessages();
         });
 
-        function closeHelpBanner() {
-            $('#helpBanner').addClass('hidden');
-            localStorage.setItem('hideHelpBanner', 'true');
+        // Load recent messages from the API
+        function loadRecentMessages() {
+            $('#messageListContainer').html('<div class="empty-messages"><i class="fas fa-spinner fa-spin"></i><p>Loading messages...</p></div>');
+            
+            $.get('/api/history', function(response) {
+                // API returns array directly, not wrapped in {messages: []}
+                recentMessages = Array.isArray(response) ? response : [];
+                
+                if (recentMessages.length === 0) {
+                    $('#messageListContainer').html(`
+                        <div class="empty-messages">
+                            <i class="fas fa-inbox-in"></i>
+                            <p>No messages received yet</p>
+                            <p style="font-size: 0.85rem; margin-top: 0.5rem;">Send a test message from the Dashboard to get started</p>
+                        </div>
+                    `);
+                    return;
+                }
+                
+                let html = '';
+                recentMessages.forEach((msg, idx) => {
+                    const parsedData = typeof msg.parsed_data === 'string' ? JSON.parse(msg.parsed_data) : msg.parsed_data;
+                    const patientId = parsedData?.patient?.id || parsedData?.patient?.practice_patient_id || 'Unknown';
+                    const time = new Date(msg.created_at).toLocaleString();
+                    
+                    html += `
+                        <div class="message-list-item ${idx === 0 ? 'selected' : ''}" onclick="selectMessage(${idx})">
+                            <div class="msg-top">
+                                <span class="protocol-tag">${msg.protocol}</span>
+                                <span class="msg-time">${time}</span>
+                            </div>
+                            <div class="msg-patient">Patient: ${patientId}</div>
+                        </div>
+                    `;
+                });
+                
+                $('#messageListContainer').html(html);
+                
+                // Auto-select first message
+                if (recentMessages.length > 0) {
+                    selectMessage(0);
+                }
+            }).fail(function() {
+                $('#messageListContainer').html(`
+                    <div class="empty-messages">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <p>Failed to load messages</p>
+                    </div>
+                `);
+                showToast('Failed to load messages', 'error');
+            });
+        }
+
+        // Select a message and display its fields
+        function selectMessage(index) {
+            $('.message-list-item').removeClass('selected');
+            $(`.message-list-item:eq(${index})`).addClass('selected');
+            
+            selectedMessage = recentMessages[index];
+            const parsedData = typeof selectedMessage.parsed_data === 'string' 
+                ? JSON.parse(selectedMessage.parsed_data) 
+                : selectedMessage.parsed_data;
+            
+            displayParsedData(parsedData);
+            
+            $('#noMessageSelected').hide();
+            $('#fieldBrowserView').show();
+        }
+
+        // Display parsed data as clickable JSON
+        function displayParsedData(data) {
+            const html = renderClickableJSON(data, '');
+            $('#parsedDataView').html(html);
+            
+            // Also display raw message
+            if (selectedMessage && selectedMessage.raw_message) {
+                $('#rawMessageView').text(selectedMessage.raw_message);
+            } else {
+                $('#rawMessageView').html('<div style="text-align: center; padding: 2rem; color: #94a3b8;"><i class="fas fa-info-circle"></i><br>Raw message not available</div>');
+            }
+        }
+        
+        // Switch between raw and parsed views
+        function switchView(view) {
+            $('.view-tab').removeClass('active');
+            $('.view-content').removeClass('active');
+            
+            if (view === 'parsed') {
+                $('.view-tab:first').addClass('active');
+                $('#parsedView').addClass('active');
+            } else if (view === 'raw') {
+                $('.view-tab:last').addClass('active');
+                $('#rawView').addClass('active');
+            }
+        }
+
+        // Render JSON with clickable fields
+        function renderClickableJSON(obj, path, indent = 0) {
+            let html = '';
+            const indentStr = '<span class="json-indent"></span>'.repeat(indent);
+            
+            if (Array.isArray(obj)) {
+                html += `<div class="json-line">${indentStr}<span class="json-bracket">[</span></div>`;
+                obj.forEach((item, idx) => {
+                    if (typeof item === 'object' && item !== null) {
+                        html += renderClickableJSON(item, `${path}[${idx}]`, indent + 1);
+                    } else {
+                        const itemPath = `${path}[${idx}]`;
+                        html += `<div class="json-line clickable-field" onclick="useFieldPath('${itemPath}')">
+                            ${indentStr}<span class="json-indent"></span><span class="json-value">${JSON.stringify(item)}</span>${idx < obj.length - 1 ? ',' : ''}
+                        </div>`;
+                    }
+                    if (idx < obj.length - 1) {
+                        // Comma is already added above
+                    }
+                });
+                html += `<div class="json-line">${indentStr}<span class="json-bracket">]</span></div>`;
+            } else if (typeof obj === 'object' && obj !== null) {
+                html += `<div class="json-line">${indentStr}<span class="json-bracket">{</span></div>`;
+                const keys = Object.keys(obj);
+                keys.forEach((key, idx) => {
+                    const value = obj[key];
+                    const fieldPath = path ? `${path}.${key}` : key;
+                    
+                    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                        if (Array.isArray(value)) {
+                            html += `<div class="json-line">${indentStr}<span class="json-indent"></span><span class="json-key">"${key}"</span>: </div>`;
+                            html += renderClickableJSON(value, fieldPath, indent + 1);
+                        } else {
+                            html += `<div class="json-line">${indentStr}<span class="json-indent"></span><span class="json-key">"${key}"</span>: </div>`;
+                            html += renderClickableJSON(value, fieldPath, indent + 1);
+                        }
+                    } else if (Array.isArray(value)) {
+                        html += `<div class="json-line clickable-field" onclick="useFieldPath('${fieldPath}[*]')">
+                            ${indentStr}<span class="json-indent"></span><span class="json-key">"${key}"</span>: <span class="json-bracket">[</span>...${value.length} items<span class="json-bracket">]</span>${idx < keys.length - 1 ? ',' : ''}
+                        </div>`;
+                    } else {
+                        const displayValue = typeof value === 'string' ? `"${value}"` : value;
+                        html += `<div class="json-line clickable-field" onclick="useFieldPath('${fieldPath}')">
+                            ${indentStr}<span class="json-indent"></span><span class="json-key">"${key}"</span>: <span class="json-value">${displayValue}</span>${idx < keys.length - 1 ? ',' : ''}
+                        </div>`;
+                    }
+                });
+                html += `<div class="json-line">${indentStr}<span class="json-bracket">}</span></div>`;
+            }
+            
+            return html;
+        }
+
+        // Use a field path in mapping
+        function useFieldPath(path) {
+            // Remove leading dot if present
+            path = path.replace(/^\./, '');
+            
+            // Check if there's an empty rule or create a new one
+            const rows = $('#rulesTableBody tr');
+            let targetRow = null;
+            
+            rows.each(function() {
+                const sourcePath = $(this).find('.source-path').val();
+                if (!sourcePath || sourcePath.trim() === '') {
+                    targetRow = $(this);
+                    return false; // break
+                }
+            });
+            
+            if (!targetRow) {
+                addMappingRule();
+                targetRow = $('#rulesTableBody tr:last');
+            }
+            
+            targetRow.find('.source-path').val(path).focus();
+            
+            // Auto-suggest a target field name
+            const suggestedTarget = path.split('.').pop().replace(/\[\*\]/, '').replace(/\[0\]/, '');
+            if (!targetRow.find('.target-path').val()) {
+                targetRow.find('.target-path').val(suggestedTarget);
+            }
+            
+            // Scroll to the mapping rules section
+            $('html, body').animate({
+                scrollTop: $('#rulesTable').offset().top - 100
+            }, 300);
+            
+            showToast(`Added field: ${path}`, 'success');
         }
 
         // Load all profiles
@@ -1157,16 +940,10 @@
                     select.empty();
                     select.append('<option value="">-- Select Profile --</option>');
                     
-                    if (response.profiles.length === 0) {
-                        $('#templateSection').show();
-                    } else {
-                        $('#templateSection').hide();
-                    }
-                    
                     response.profiles.forEach(profile => {
                         const option = $('<option>')
                             .val(profile.id)
-                            .text(profile.name + (profile.is_active ? ' ★ Active' : ''));
+                            .text(profile.name + (profile.is_active ? ' (Active)' : ''));
                         select.append(option);
                     });
                 }
@@ -1192,12 +969,10 @@
                     const profile = response.profile;
                     currentProfileId = profile.id;
                     
-                    $('#profileName').val(profile.name).removeClass('error');
-                    $('#nameError').removeClass('show');
+                    $('#profileName').val(profile.name);
                     $('#profileDescription').val(profile.description || '');
                     $('#protocolFilter').val(profile.protocol_filter || 'ALL');
                     
-                    // Show active badge
                     if (profile.is_active) {
                         $('#activeBadge').show();
                         $('#btnActivate').prop('disabled', true);
@@ -1206,16 +981,12 @@
                         $('#btnActivate').prop('disabled', false);
                     }
                     
-                    // Enable buttons
                     $('#btnDuplicate, #btnDelete').prop('disabled', false);
                     if (profile.is_active) {
                         $('#btnDelete').prop('disabled', true);
                     }
                     
-                    // Load mapping rules
                     loadMappingRules(profile.config || []);
-                    
-                    showToast(`Loaded profile: ${profile.name}`, 'info');
                 }
             }).fail(function() {
                 showToast('Failed to load profile', 'error');
@@ -1234,12 +1005,7 @@
                             <div class="empty-state">
                                 <i class="fas fa-project-diagram"></i>
                                 <h3>No mapping rules yet</h3>
-                                <p>Click "Add Rule" to create your first mapping from an HL7/ASTM field to your custom output field.</p>
-                                <div class="example">
-                                    <strong>Example:</strong><br>
-                                    Source: <code>patient.id</code><br>
-                                    Target: <code>patientIdentifier</code>
-                                </div>
+                                <p>Select a message above and click on fields to start mapping</p>
                             </div>
                         </td>
                     </tr>
@@ -1247,7 +1013,7 @@
                 return;
             }
             
-            rules.forEach((rule, index) => {
+            rules.forEach((rule) => {
                 addRuleRow(rule);
             });
         }
@@ -1255,16 +1021,11 @@
         // Add new mapping rule row
         function addMappingRule() {
             addRuleRow({source_path: '', target_path: '', transform: null});
-            
-            // Scroll to new rule
-            const tbody = $('#rulesTableBody');
-            tbody.scrollTop(tbody[0].scrollHeight);
         }
 
         function addRuleRow(rule) {
             const tbody = $('#rulesTableBody');
             
-            // Remove empty state if present
             if (tbody.find('.empty-state').length > 0) {
                 tbody.empty();
             }
@@ -1272,32 +1033,25 @@
             const row = $(`
                 <tr>
                     <td>
-                        <div class="field-input-group">
-                            <input type="text" class="source-path" value="${rule.source_path || ''}" 
-                                   placeholder="e.g., patient.id or observations[0].value"
-                                   onblur="validateFieldPath(this)">
-                            <button class="btn-icon" onclick="openFieldBrowser(this)" title="Browse available fields">
-                                <i class="fas fa-sitemap"></i>
-                            </button>
-                        </div>
+                        <input type="text" class="source-path" value="${rule.source_path || ''}" 
+                               placeholder="e.g., patient.id or observations[*].value">
                     </td>
                     <td>
                         <input type="text" class="target-path" value="${rule.target_path || ''}" 
-                               placeholder="e.g., patientId or results[0].value"
-                               onblur="validateFieldPath(this)">
+                               placeholder="e.g., patientId">
                     </td>
                     <td>
                         <select class="transform">
                             <option value="">None</option>
                             <option value="uppercase"${rule.transform === 'uppercase' ? ' selected' : ''}>Uppercase</option>
                             <option value="lowercase"${rule.transform === 'lowercase' ? ' selected' : ''}>Lowercase</option>
-                            <option value="trim"${rule.transform === 'trim' ? ' selected' : ''}>Trim Whitespace</option>
-                            <option value="string"${rule.transform === 'string' ? ' selected' : ''}>To String</option>
+                            <option value="trim"${rule.transform === 'trim' ? ' selected' : ''}>Trim</option>
+                            <option value="string"${rule.transform === 'string' ? ' selected' : ''}>String</option>
                         </select>
                     </td>
                     <td style="text-align: center;">
-                        <button class="btn-icon" onclick="removeRuleRow(this)" title="Remove this rule">
-                            <i class="fas fa-trash" style="color: var(--danger-color);"></i>
+                        <button class="btn-icon" onclick="removeRuleRow(this)" title="Remove" style="color: var(--danger-color);">
+                            <i class="fas fa-trash"></i>
                         </button>
                     </td>
                 </tr>
@@ -1306,21 +1060,10 @@
             tbody.append(row);
         }
 
-        function validateFieldPath(input) {
-            const value = $(input).val().trim();
-            if (value && !value.match(/^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*|\[\d+\]|\[\*\])*$/)) {
-                $(input).addClass('error');
-                showToast('Invalid field path format', 'warning');
-            } else {
-                $(input).removeClass('error');
-            }
-        }
-
         function removeRuleRow(btn) {
             const tbody = $('#rulesTableBody');
             $(btn).closest('tr').remove();
             
-            // Show empty state if no rows left
             if (tbody.find('tr').length === 0) {
                 tbody.append(`
                     <tr>
@@ -1328,12 +1071,7 @@
                             <div class="empty-state">
                                 <i class="fas fa-project-diagram"></i>
                                 <h3>No mapping rules yet</h3>
-                                <p>Click "Add Rule" to create your first mapping from an HL7/ASTM field to your custom output field.</p>
-                                <div class="example">
-                                    <strong>Example:</strong><br>
-                                    Source: <code>patient.id</code><br>
-                                    Target: <code>patientIdentifier</code>
-                                </div>
+                                <p>Select a message above and click on fields to start mapping</p>
                             </div>
                         </td>
                     </tr>
@@ -1345,18 +1083,13 @@
         function saveProfile() {
             const name = $('#profileName').val().trim();
             if (!name) {
-                $('#profileName').addClass('error');
-                $('#nameError').addClass('show');
                 showToast('Profile name is required', 'error');
                 return;
             }
             
-            $('#profileName').removeClass('error');
-            $('#nameError').removeClass('show');
-            
             const config = collectMappingRules();
             if (config.length === 0) {
-                showToast('Add at least one mapping rule before saving', 'warning');
+                showToast('At least one mapping rule is required', 'error');
                 return;
             }
             
@@ -1377,7 +1110,7 @@
                 data: JSON.stringify(data),
                 success: function(response) {
                     if (response.success) {
-                        showToast(currentProfileId ? 'Profile updated successfully!' : 'Profile created successfully!', 'success');
+                        showToast(currentProfileId ? 'Profile updated' : 'Profile created', 'success');
                         if (!currentProfileId) {
                             currentProfileId = response.profile_id;
                         }
@@ -1422,8 +1155,7 @@
             clearForm();
             currentProfileId = null;
             $('#profileSelect').val('');
-            $('#templateSection').show();
-            showToast('Create a new mapping profile below', 'info');
+            showToast('Create a new mapping profile', 'info');
         }
 
         // Duplicate profile
@@ -1434,16 +1166,15 @@
             $('#profileName').val(newName);
             currentProfileId = null;
             $('#activeBadge').hide();
-            $('#btnActivate').prop('disabled', false);
-            $('#btnDelete').prop('disabled', true);
-            showToast('Duplicated! Modify and save to create a new profile', 'info');
+            $('#btnActivate').prop('disabled', true);
+            showToast('Make changes and save to create a duplicate', 'info');
         }
 
         // Delete profile
         function deleteProfile() {
             if (!currentProfileId) return;
             
-            if (!confirm('Are you sure you want to delete this mapping profile? This cannot be undone.')) {
+            if (!confirm('Are you sure you want to delete this mapping profile?')) {
                 return;
             }
             
@@ -1452,7 +1183,7 @@
                 method: 'DELETE',
                 success: function(response) {
                     if (response.success) {
-                        showToast('Profile deleted successfully', 'success');
+                        showToast('Profile deleted', 'success');
                         clearForm();
                         loadProfiles();
                     } else {
@@ -1469,13 +1200,13 @@
         // Activate profile
         function activateProfile() {
             if (!currentProfileId) {
-                showToast('Please save the profile first', 'warning');
+                showToast('Please save the profile first', 'error');
                 return;
             }
             
             $.post(`/api/mappings/${currentProfileId}/activate`, function(response) {
                 if (response.success) {
-                    showToast('Profile activated! All messages will now use this mapping', 'success');
+                    showToast('Profile activated', 'success');
                     $('#activeBadge').show();
                     $('#btnActivate').prop('disabled', true);
                     $('#btnDelete').prop('disabled', true);
@@ -1493,8 +1224,6 @@
         function clearForm() {
             currentProfileId = null;
             $('#profileName, #profileDescription').val('');
-            $('#profileName').removeClass('error');
-            $('#nameError').removeClass('show');
             $('#protocolFilter').val('ALL');
             $('#activeBadge').hide();
             $('#btnDuplicate, #btnDelete, #btnActivate').prop('disabled', true);
@@ -1504,62 +1233,41 @@
                         <div class="empty-state">
                             <i class="fas fa-project-diagram"></i>
                             <h3>No mapping rules yet</h3>
-                            <p>Click "Add Rule" to create your first mapping from an HL7/ASTM field to your custom output field.</p>
-                            <div class="example">
-                                <strong>Example:</strong><br>
-                                Source: <code>patient.id</code><br>
-                                Target: <code>patientIdentifier</code>
-                            </div>
+                            <p>Select a message above and click on fields to start mapping</p>
                         </div>
                     </td>
                 </tr>
             `);
         }
 
-        // Load sample data
-        function loadSampleData() {
-            const protocol = $('#sampleProtocol').val();
-            $.get(`/api/mappings/sample/${protocol}`, function(response) {
-                if (response.success) {
-                    sampleData[protocol] = response.sample;
-                    originalSampleData[protocol] = response.sample;
-                    $('#previewInput').html('').jsonViewer(response.sample, {collapsed: false, withQuotes: true});
-                }
-            }).fail(function() {
-                showToast('Failed to load sample data', 'error');
-            });
-        }
-
         // Preview mapping
         function previewMapping() {
-            const protocol = $('#sampleProtocol').val();
+            if (!selectedMessage) {
+                showToast('Please select a message first', 'error');
+                return;
+            }
+            
             const config = collectMappingRules();
-            
             if (config.length === 0) {
-                showToast('Add at least one mapping rule to preview', 'warning');
+                showToast('Add at least one mapping rule to preview', 'error');
                 return;
             }
             
-            if (!sampleData[protocol]) {
-                showToast('Loading sample data...', 'info');
-                loadSampleData();
-                setTimeout(previewMapping, 1000);
-                return;
-            }
+            const parsedData = typeof selectedMessage.parsed_data === 'string' 
+                ? JSON.parse(selectedMessage.parsed_data) 
+                : selectedMessage.parsed_data;
             
             $.ajax({
                 url: '/api/mappings/preview',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({
-                    data: sampleData[protocol],
+                    data: parsedData,
                     config: config
                 }),
                 success: function(response) {
                     if (response.success) {
-                        $('#previewOutput').html('').jsonViewer(response.result, {collapsed: false, withQuotes: true});
-                        switchPreviewTab('output');
-                        showToast('Preview generated successfully!', 'success');
+                        $('#previewOutput').html('').jsonViewer(response.result, {collapsed: false});
                     } else {
                         showToast(response.error || 'Preview failed', 'error');
                     }
@@ -1571,184 +1279,18 @@
             });
         }
 
-        // Switch preview tab
-        function switchPreviewTab(tab) {
-            $('.preview-tab').removeClass('active');
-            $('.json-preview').removeClass('active');
-            
-            if (tab === 'input') {
-                $('.preview-tab:first').addClass('active');
-                $('#previewInput').addClass('active');
-            } else {
-                $('.preview-tab:last').addClass('active');
-                $('#previewOutput').addClass('active');
-            }
-        }
-
-        // Field browser
-        function openFieldBrowser(btn) {
-            currentInputTarget = $(btn).closest('.field-input-group').find('.source-path');
-            $('#fieldBrowserModal').addClass('active');
-            const protocol = $('#sampleProtocol').val();
-            buildFieldTree(protocol);
-        }
-
-        function closeFieldBrowser() {
-            $('#fieldBrowserModal').removeClass('active');
-            currentInputTarget = null;
-            $('#fieldSearchInput').val('');
-        }
-
-        function openFieldBrowserHelp() {
-            $('#helpModal').addClass('active');
-        }
-
-        function closeHelpModal() {
-            $('#helpModal').removeClass('active');
-        }
-
-        function switchProtocolTab(protocol) {
-            $('.protocol-tab').removeClass('active');
-            $(event.target).addClass('active');
-            buildFieldTree(protocol);
-        }
-
-        function buildFieldTree(protocol) {
-            if (!sampleData[protocol]) {
-                $.get(`/api/mappings/sample/${protocol}`, function(response) {
-                    if (response.success) {
-                        sampleData[protocol] = response.sample;
-                        $('#fieldTree').empty();
-                        renderFieldTree(sampleData[protocol], '', $('#fieldTree'));
-                    }
-                });
-            } else {
-                $('#fieldTree').empty();
-                renderFieldTree(sampleData[protocol], '', $('#fieldTree'));
-            }
-        }
-
-        function renderFieldTree(obj, path, container) {
-            const ul = $('<ul></ul>');
-            
-            for (const [key, value] of Object.entries(obj)) {
-                const li = $('<li></li>');
-                const currentPath = path ? `${path}.${key}` : key;
-                
-                if (value && typeof value === 'object' && !Array.isArray(value)) {
-                    // Object node
-                    const node = $(`
-                        <div class="field-node">
-                            <i class="fas fa-folder"></i>
-                            <span class="field-path">${key}</span>
-                            <span class="field-type">object</span>
-                        </div>
-                    `);
-                    node.click(function(e) {
-                        e.stopPropagation();
-                        if (currentInputTarget) {
-                            currentInputTarget.val(currentPath);
-                            closeFieldBrowser();
-                        }
-                    });
-                    li.append(node);
-                    renderFieldTree(value, currentPath, li);
-                } else if (Array.isArray(value) && value.length > 0) {
-                    // Array node
-                    const node = $(`
-                        <div class="field-node">
-                            <i class="fas fa-list"></i>
-                            <span class="field-path">${key}[*]</span>
-                            <span class="field-type">array</span>
-                        </div>
-                    `);
-                    node.click(function(e) {
-                        e.stopPropagation();
-                        if (currentInputTarget) {
-                            currentInputTarget.val(`${currentPath}[*]`);
-                            closeFieldBrowser();
-                        }
-                    });
-                    li.append(node);
-                    if (typeof value[0] === 'object') {
-                        renderFieldTree(value[0], `${currentPath}[*]`, li);
-                    }
-                } else {
-                    // Leaf node
-                    const type = typeof value;
-                    const node = $(`
-                        <div class="field-node">
-                            <i class="fas fa-cube"></i>
-                            <span class="field-path">${key}</span>
-                            <span class="field-type">${type}</span>
-                        </div>
-                    `);
-                    node.click(function(e) {
-                        e.stopPropagation();
-                        if (currentInputTarget) {
-                            currentInputTarget.val(currentPath);
-                            closeFieldBrowser();
-                        }
-                    });
-                    li.append(node);
-                }
-                
-                ul.append(li);
-            }
-            
-            container.append(ul);
-        }
-
-        function filterFields() {
-            const search = $('#fieldSearchInput').val().toLowerCase();
-            $('.field-node').each(function() {
-                const text = $(this).text().toLowerCase();
-                const matches = text.includes(search);
-                $(this).closest('li').toggle(matches);
-            });
-        }
-
-        // Templates
-        function loadTemplate(templateType) {
-            clearForm();
-            
-            if (templateType === 'basic') {
-                $('#profileName').val('Basic Mapping');
-                $('#profileDescription').val('Maps patient ID and test results');
-                addRuleRow({source_path: 'patient.id', target_path: 'patientId', transform: null});
-                addRuleRow({source_path: 'observations[*].identifier', target_path: 'results[*].testName', transform: null});
-                addRuleRow({source_path: 'observations[*].value', target_path: 'results[*].testValue', transform: null});
-            } else if (templateType === 'detailed') {
-                $('#profileName').val('Detailed Mapping');
-                $('#profileDescription').val('Comprehensive patient and order information');
-                addRuleRow({source_path: 'patient.id', target_path: 'patientId', transform: null});
-                addRuleRow({source_path: 'patient.name.family_name', target_path: 'lastName', transform: null});
-                addRuleRow({source_path: 'patient.name.given_name', target_path: 'firstName', transform: null});
-                addRuleRow({source_path: 'patient.date_of_birth', target_path: 'dob', transform: null});
-                addRuleRow({source_path: 'orders[0].universal_service_id', target_path: 'testName', transform: null});
-                addRuleRow({source_path: 'observations[*].identifier', target_path: 'results[*].code', transform: null});
-                addRuleRow({source_path: 'observations[*].value', target_path: 'results[*].value', transform: null});
-                addRuleRow({source_path: 'observations[*].units', target_path: 'results[*].units', transform: null});
-            }
-            
-            $('#templateSection').hide();
-            showToast(`Loaded ${templateType} template`, 'success');
-        }
-
         // Toast notification
         function showToast(message, type = 'success') {
             const toast = $('#toast');
             const icon = toast.find('i');
             
-            toast.removeClass('success error info warning');
+            toast.removeClass('success error info');
             toast.addClass(type);
             
             if (type === 'success') {
                 icon.removeClass().addClass('fas fa-check-circle');
             } else if (type === 'error') {
                 icon.removeClass().addClass('fas fa-exclamation-circle');
-            } else if (type === 'warning') {
-                icon.removeClass().addClass('fas fa-exclamation-triangle');
             } else {
                 icon.removeClass().addClass('fas fa-info-circle');
             }
@@ -1758,29 +1300,8 @@
             
             setTimeout(function() {
                 toast.removeClass('active');
-            }, 4000);
+            }, 3000);
         }
-
-        // Close modal on background click
-        $('.modal').click(function(e) {
-            if (e.target === this) {
-                $(this).removeClass('active');
-            }
-        });
-
-        // Keyboard shortcuts
-        $(document).keydown(function(e) {
-            // Escape to close modals
-            if (e.key === 'Escape') {
-                $('.modal').removeClass('active');
-            }
-            
-            // Ctrl/Cmd + S to save
-            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                e.preventDefault();
-                saveProfile();
-            }
-        });
     </script>
 </body>
 </html>
