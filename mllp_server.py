@@ -38,6 +38,9 @@ class HL7MLLPHandler(socketserver.StreamRequestHandler):
     Handles incoming TCP connections containing HL7 messages wrapped in MLLP
     """
     
+    # Set socket timeout to None for persistent connections
+    timeout = None
+    
     def handle(self):
         client_ip = self.client_address[0]
         client_port = self.client_address[1]
@@ -137,11 +140,17 @@ class HL7MLLPHandler(socketserver.StreamRequestHandler):
         
         # Wrap in MLLP envelopes
         wrapped_ack = SB + ack_msg.encode('utf-8') + EB + CR
-        self.request.sendall(wrapped_ack)        return len(wrapped_ack)
+        self.request.sendall(wrapped_ack)
+        return len(wrapped_ack)
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     """Handle requests in a separate thread."""
     allow_reuse_address = True
+    
+    def server_activate(self):
+        """Enable TCP keepalive for persistent connections"""
+        self.socket.setsockopt(socketserver.socket.SOL_SOCKET, socketserver.socket.SO_KEEPALIVE, 1)
+        super().server_activate()
 
 
 if __name__ == "__main__":

@@ -429,6 +429,45 @@ Content-Type: application/json
                                 • <b>Tip:</b> Leave as <code style="background:white;padding:2px 5px;border-radius:3px;">0.0.0.0</code> unless you have a specific security reason to restrict it.
                             </span>
                         </div>
+                        
+                        <!-- Status Badge Explanation -->
+                        <div style="background:#e0f2fe;border:1px solid #0ea5e9;border-radius:6px;padding:0.85rem;margin-bottom:1.25rem;font-size:0.87rem;color:#0c4a6e;">
+                            <b style="display:block;margin-bottom:0.5rem;"><i class="fas fa-question-circle"></i> About the Status Badges</b>
+                            <div style="margin-bottom:0.5rem;">
+                                Each port has a status badge that auto-refreshes every 6 seconds:
+                            </div>
+                            <div style="display:flex;gap:1.5rem;margin:0.5rem 0;">
+                                <span style="display:flex;align-items:center;gap:0.4rem;">
+                                    <span class="status-badge badge-up" style="display:inline-flex;"><span class="status-dot"></span>Listening</span>
+                                    <span>= A server is actively accepting connections on this port</span>
+                                </span>
+                                <span style="display:flex;align-items:center;gap:0.4rem;">
+                                    <span class="status-badge badge-down" style="display:inline-flex;"><span class="status-dot"></span>Not listening</span>
+                                    <span>= Nothing is bound to this port yet</span>
+                                </span>
+                            </div>
+                            <div style="background:white;border-radius:4px;padding:0.6rem;margin-top:0.65rem;font-size:0.85rem;">
+                                <b style="color:#0369a1;">⚠️ Important:</b> The <b>MLLP</b> and <b>ASTM</b> listeners are <u>separate background processes</u> that must be started.<br>
+                                <div style="margin-top:0.5rem;padding:0.6rem;background:#f8fafc;border-left:3px solid #10b981;border-radius:4px;">
+                                    <b style="color:#047857;">✅ Easiest way to start all servers:</b><br>
+                                    <code style="background:#f1f5f9;padding:3px 6px;border-radius:3px;font-size:0.9em;display:inline-block;margin-top:0.3rem;">bash start.sh</code><br>
+                                    <span style="font-size:0.8em;color:#64748b;margin-top:0.3rem;display:block;">This automatically starts HTTP, MLLP, and ASTM listeners together. All badges should show "Listening" within a few seconds.</span>
+                                </div>
+                                <div style="margin-top:0.5rem;">
+                                    <b style="color:#0369a1;">Alternative (manual control):</b><br>
+                                    <span style="font-size:0.85em;display:block;margin-top:0.3rem;padding-left:0.5rem;">
+                                        • <b>HTTP</b>: <code style="background:#f1f5f9;padding:2px 5px;border-radius:3px;">python app.py</code> (starts automatically, always shows "Listening")<br>
+                                        • <b>MLLP</b>: <code style="background:#f1f5f9;padding:2px 5px;border-radius:3px;">python mllp_server.py</code> (run in a separate terminal)<br>
+                                        • <b>ASTM</b>: <code style="background:#f1f5f9;padding:2px 5px;border-radius:3px;">python astm_server.py</code> (run in a separate terminal)
+                                    </span>
+                                </div>
+                                <div style="margin-top:0.5rem;padding:0.5rem;background:#fef2f2;border-left:3px solid #ef4444;border-radius:4px;font-size:0.83em;">
+                                    <b style="color:#b91c1c;">❌ If badges show "Not listening":</b><br>
+                                    The corresponding server process isn't running. Your analyzer will fail to connect. Use <code style="background:white;padding:2px 5px;border-radius:3px;">bash start.sh</code> or manually start the missing server(s).
+                                </div>
+                            </div>
+                        </div>
+                        
                         <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1.25rem;">
                             Port or host changes require an app restart.
                         </p>
