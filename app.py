@@ -8,7 +8,10 @@ import os
 import sys
 import collections
 import socket
+import socketserver
 import threading as _threading
+import time
+import requests
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
@@ -61,6 +64,230 @@ class _MemoryHandler(logging.Handler):
 logging.getLogger().addHandler(_MemoryHandler())
 
 
+# ---------------------------------------------------------------------------
+# MLLP Listener Classes (integrated from mllp_server.py)
+# ---------------------------------------------------------------------------
+class HL7MLLPHandler(socketserver.StreamRequestHandler):
+    """Handles incoming TCP connections containing HL7 messages wrapped in MLLP"""
+    
+    # MLLP Constants
+    SB = b'\x0b'  # Start Block (VT)
+    EB = b'\x1c'  # End Block (FS)
+    CR = b'\x0d'  # Carriage Return
+    timeout = None
+    
+    def handle(self):
+        client_ip = self.client_address[0]
+        client_port = self.client_address[1]
+        logger.info(f"[MLLP] New connection established from {client_ip}:{client_port}")
+        
+        start_time = time.time()
+        total_bytes = 0
+        message_count = 0
+        
+        try:
+            buffer = b''
+            
+            while True:
+                chunk = self.request.recv(4096)
+                if not chunk:
+                    logger.info(f"[MLLP] Connection closed by {client_ip} after {time.time()-start_time:.2f}s, {total_bytes} bytes, {message_count} messages")
+                    break
+                
+                total_bytes += len(chunk)
+                logger.debug(f"[MLLP] Received {len(chunk)} bytes from {client_ip} (total: {total_bytes})")
+                buffer += chunk
+                
+                while self.SB in buffer and self.EB + self.CR in buffer:
+                    start = buffer.find(self.SB)
+                    end = buffer.find(self.EB + self.CR)
+                    
+                    if start != -1 and end != -1:
+                        hl7_data = buffer[start+1:end]
+                        message_count += 1
+                        logger.info(f"[MLLP] Extracted HL7 message #{message_count} from {client_ip} ({len(hl7_data)} bytes)")
+                        
+                        self._process_message(hl7_data, client_ip)
+                        self._send_ack()
+                        
+                        buffer = buffer[end+2:]
+                    else:
+                        break
+                        
+        except Exception as e:
+            logger.error(f"[MLLP] Error handling connection from {client_ip}:{client_port}: {str(e)}")
+
+    def _process_message(self, raw_data, client_ip):
+        """Send received HL7 message to the main Flask API"""
+        try:
+            message = raw_data.decode('utf-8', errors='ignore')
+            logger.info(f"[MLLP] Decoded HL7 message: {len(message)} chars from {client_ip}")
+            
+            port = os.getenv('PORT', 5001)
+            api_endpoint = f"http://localhost:{port}/hl7/receive"
+            
+            try:
+                response = requests.post(
+                    api_endpoint,
+                    data=message,
+                    headers={
+                        'Content-Type': 'text/plain',
+                        'X-Original-Source-IP': client_ip
+                    },
+                    timeout=10
+                )
+                logger.info(f"[MLLP] HTTP POST → Flask: {response.status_code}")
+            except Exception as e:
+                logger.error(f"[MLLP] Failed to forward to API: {str(e)}")
+                
+        except Exception as e:
+            logger.error(f"[MLLP] Error processing message: {str(e)}")
+
+    def _send_ack(self):
+        """Send a basic HL7 ACK message back to machine"""
+        ack_msg = f"MSH|^~\\&|HL7_LISTENER|LOCAL|LAB_MACHINE|REMOTE|{time.strftime('%Y%m%d%H%M%S')}||ACK|1|P|2.3\rMSA|AA|1\r"
+        wrapped_ack = self.SB + ack_msg.encode('utf-8') + self.EB + self.CR
+        self.request.sendall(wrapped_ack)
+
+
+# ---------------------------------------------------------------------------
+# ASTM Listener Classes (integrated from astm_server.py)
+# ---------------------------------------------------------------------------
+class ASTMHandler(socketserver.StreamRequestHandler):
+    """Handles incoming TCP connections containing ASTM messages"""
+    
+    # ASTM Protocol Constants
+    STX = b'\x02'  # Start of Text
+    ETX = b'\x03'  # End of Text
+    EOT = b'\x04'  # End of Transmission
+    ENQ = b'\x05'  # Enquiry
+    ACK = b'\x06'  # Acknowledge
+    NAK = b'\x15'  # Negative Acknowledge
+    
+    def handle(self):
+        client_ip = self.client_address[0]
+        client_port = self.client_address[1]
+        logger.info(f"[ASTM] New connection established from {client_ip}:{client_port}")
+        
+        start_time = time.time()
+        total_bytes = 0
+        frame_count = 0
+        
+        try:
+            buffer = b''
+            messages = []
+            
+            while True:
+                chunk = self.request.recv(4096)
+                if not chunk:
+                    logger.info(f"[ASTM] Connection closed by {client_ip} after {time.time()-start_time:.2f}s, {total_bytes} bytes, {frame_count} frames")
+                    break
+                
+                total_bytes += len(chunk)
+                logger.debug(f"[ASTM] Received {len(chunk)} bytes from {client_ip} (total: {total_bytes})")
+                buffer += chunk
+                
+                if self.ENQ in buffer:
+                    logger.info(f"[ASTM] ← Received ENQ from {client_ip}")
+                    self.request.sendall(self.ACK)
+                    logger.info(f"[ASTM] → Sent ACK to {client_ip}")
+                    buffer = buffer.replace(self.ENQ, b'')
+                    continue
+                
+                if self.EOT in buffer:
+                    logger.info(f"[ASTM] ← Received EOT from {client_ip} — {len(messages)} frames complete")
+                    if messages:
+                        full_message = '\n'.join(messages)
+                        logger.info(f"[ASTM] Assembled {len(messages)} frames into {len(full_message)} char message")
+                        self._process_message(full_message, client_ip)
+                    messages = []
+                    buffer = buffer.replace(self.EOT, b'')
+                    continue
+                
+                while self.STX in buffer and self.ETX in buffer:
+                    stx_pos = buffer.find(self.STX)
+                    etx_pos = buffer.find(self.ETX, stx_pos)
+                    
+                    if stx_pos != -1 and etx_pos != -1:
+                        frame_data = buffer[stx_pos + 1:etx_pos]
+                        checksum_end = etx_pos + 3
+                        
+                        if len(buffer) > checksum_end:
+                            checksum = buffer[etx_pos + 1:etx_pos + 3]
+                            frame_count += 1
+                            
+                            if len(frame_data) > 0:
+                                frame_num = frame_data[0:1]
+                                data = frame_data[1:].decode('utf-8', errors='ignore')
+                                messages.append(data)
+                                logger.info(f"[ASTM] ← Frame {frame_num.decode('utf-8','ignore')}: {len(data)} bytes")
+                            
+                            self.request.sendall(self.ACK)
+                            buffer = buffer[checksum_end + 2:]
+                        else:
+                            break
+                    else:
+                        break
+                        
+        except Exception as e:
+            logger.error(f"[ASTM] Error handling connection from {client_ip}:{client_port}: {str(e)}")
+    
+    def _process_message(self, raw_data, client_ip):
+        """Send received ASTM message to the main Flask API"""
+        try:
+            logger.info(f"[ASTM] Parsed ASTM message from {client_ip}: {len(raw_data)} chars")
+            
+            port = os.getenv('PORT', 5001)
+            api_endpoint = f"http://localhost:{port}/astm/receive"
+            
+            try:
+                response = requests.post(
+                    api_endpoint,
+                    data=raw_data,
+                    headers={
+                        'Content-Type': 'text/plain',
+                        'X-Original-Source-IP': client_ip,
+                        'X-Protocol': 'ASTM'
+                    },
+                    timeout=10
+                )
+                logger.info(f"[ASTM] HTTP POST → Flask: {response.status_code}")
+            except Exception as e:
+                logger.error(f"[ASTM] Failed to forward to API: {str(e)}")
+                
+        except Exception as e:
+            logger.error(f"[ASTM] Error processing ASTM message: {str(e)}")
+
+
+class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    """Handle requests in a separate thread."""
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+# ---------------------------------------------------------------------------
+# Listener Startup Functions
+# ---------------------------------------------------------------------------
+def start_mllp_listener(host, port):
+    """Start MLLP listener in background thread"""
+    try:
+        logger.info(f"[MLLP] Starting listener on {host}:{port}")
+        server = ThreadedTCPServer((host, port), HL7MLLPHandler)
+        server.serve_forever()
+    except Exception as e:
+        logger.error(f"[MLLP] Failed to start listener: {str(e)}")
+
+
+def start_astm_listener(host, port):
+    """Start ASTM listener in background thread"""
+    try:
+        logger.info(f"[ASTM] Starting listener on {host}:{port}")
+        server = ThreadedTCPServer((host, port), ASTMHandler)
+        server.serve_forever()
+    except Exception as e:
+        logger.error(f"[ASTM] Failed to start listener: {str(e)}")
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -93,6 +320,30 @@ def create_app() -> Flask:
     )
     delivery_service.start()
     logger.info(f'Delivery service started: max_attempts={app.config["DELIVERY_MAX_ATTEMPTS"]}, poll_interval={app.config["DELIVERY_POLL_INTERVAL"]}s')
+
+    # Start MLLP Listener in background thread
+    mllp_host = app.config.get('MLLP_HOST', '0.0.0.0')
+    mllp_port = app.config.get('MLLP_PORT', 6000)
+    mllp_thread = _threading.Thread(
+        target=start_mllp_listener,
+        args=(mllp_host, mllp_port),
+        daemon=True,
+        name="MLLP-Listener"
+    )
+    mllp_thread.start()
+    logger.info(f'MLLP listener thread started on {mllp_host}:{mllp_port}')
+
+    # Start ASTM Listener in background thread
+    astm_host = app.config.get('ASTM_HOST', '0.0.0.0')
+    astm_port = app.config.get('ASTM_PORT', 7000)
+    astm_thread = _threading.Thread(
+        target=start_astm_listener,
+        args=(astm_host, astm_port),
+        daemon=True,
+        name="ASTM-Listener"
+    )
+    astm_thread.start()
+    logger.info(f'ASTM listener thread started on {astm_host}:{astm_port}')
 
     ingest_service = IngestService(
         repository=repository,
@@ -294,8 +545,8 @@ if __name__ == '__main__':
     logger.info('=' * 60)
     logger.info('Starting Flask HTTP server...')
     logger.info(f'HTTP bound to {app.config["HOST"]}:{app.config["PORT"]}')
-    logger.info(f'Expected MLLP listener: {app.config.get("MLLP_HOST","0.0.0.0")}:{app.config.get("MLLP_PORT",6000)}')
-    logger.info(f'Expected ASTM listener: {app.config.get("ASTM_HOST","0.0.0.0")}:{app.config.get("ASTM_PORT",7000)}')
+    logger.info(f'MLLP listener: {app.config.get("MLLP_HOST","0.0.0.0")}:{app.config.get("MLLP_PORT",6000)} (auto-started)')
+    logger.info(f'ASTM listener: {app.config.get("ASTM_HOST","0.0.0.0")}:{app.config.get("ASTM_PORT",7000)} (auto-started)')
     logger.info('=' * 60)
     app.run(
         host=app.config['HOST'],
