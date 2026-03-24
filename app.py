@@ -209,51 +209,29 @@ class HL7MLLPHandler(socketserver.BaseRequestHandler):
             logger.error(f"[MLLP] Error handling connection from {client_ip}:{client_port}: {str(e)}")
 
     def _process_message(self, raw_data, client_ip):
-        """Send received HL7 message to the main Flask API"""
+        """Process received HL7 message via IngestService directly."""
         try:
             message = raw_data.decode('utf-8', errors='ignore')
             logger.info(f"[MLLP] Decoded HL7 message: {len(message)} chars from {client_ip}")
-            
-            port = os.getenv('PORT', 5001)
-            api_endpoint = f"http://localhost:{port}/hl7/receive"
-            
-            try:
-                response = requests.post(
-                    api_endpoint,
-                    data=message,
-                    headers={
-                        'Content-Type': 'text/plain',
-                        'X-Original-Source-IP': client_ip
-                    },
-                    timeout=10
-                )
-                logger.info(f"[MLLP] HTTP POST → Flask: {response.status_code}")
-            except Exception as e:
-                logger.error(f"[MLLP] Failed to forward to API: {str(e)}")
-                
+            ingest = self.server.ingest_service
+            if ingest is None:
+                logger.error("[MLLP] IngestService not available — message dropped")
+                return
+            result = ingest.process_hl7(message, client_ip)
+            logger.info(f"[MLLP] Processed HL7 → uid={result['message_uid']}, delivery={result['delivery']['status']}")
         except Exception as e:
-            logger.error(f"[MLLP] Error processing message: {str(e)}")
+            logger.error(f"[MLLP] Error processing HL7 message: {str(e)}")
 
     def _process_astm_message(self, raw_data, client_ip):
-        """Forward an ASTM message that arrived on the MLLP port."""
+        """Process an ASTM message that arrived on the MLLP port."""
         try:
-            logger.info(f"[MLLP] Forwarding ASTM message from {client_ip}: {len(raw_data)} chars")
-            port = os.getenv('PORT', 5001)
-            api_endpoint = f"http://localhost:{port}/astm/receive"
-            try:
-                response = requests.post(
-                    api_endpoint,
-                    data=raw_data,
-                    headers={
-                        'Content-Type': 'text/plain',
-                        'X-Original-Source-IP': client_ip,
-                        'X-Protocol': 'ASTM',
-                    },
-                    timeout=10,
-                )
-                logger.info(f"[MLLP] HTTP POST → Flask (ASTM): {response.status_code}")
-            except Exception as e:
-                logger.error(f"[MLLP] Failed to forward ASTM message to API: {str(e)}")
+            logger.info(f"[MLLP] Processing ASTM message from {client_ip}: {len(raw_data)} chars")
+            ingest = self.server.ingest_service
+            if ingest is None:
+                logger.error("[MLLP] IngestService not available — message dropped")
+                return
+            result = ingest.process_astm(raw_data, client_ip)
+            logger.info(f"[MLLP] Processed ASTM → uid={result['message_uid']}, delivery={result['delivery']['status']}")
         except Exception as e:
             logger.error(f"[MLLP] Error processing ASTM message: {str(e)}")
 
@@ -267,8 +245,12 @@ class HL7MLLPHandler(socketserver.BaseRequestHandler):
 # ---------------------------------------------------------------------------
 # ASTM Listener Classes (integrated from astm_server.py)
 # ---------------------------------------------------------------------------
-class ASTMHandler(socketserver.StreamRequestHandler):
-    """Handles incoming TCP connections containing ASTM messages"""
+class ASTMHandler(socketserver.BaseRequestHandler):
+    """Handles incoming TCP connections containing ASTM messages.
+    Supports both instrument-initiated (instrument sends ENQ first) and
+    server-initiated (server sends ENQ to prompt instrument) communication,
+    which is needed for instruments like the Horiba Yumizen H550.
+    """
     
     # ASTM Protocol Constants
     STX = b'\x02'  # Start of Text
@@ -277,7 +259,16 @@ class ASTMHandler(socketserver.StreamRequestHandler):
     ENQ = b'\x05'  # Enquiry
     ACK = b'\x06'  # Acknowledge
     NAK = b'\x15'  # Negative Acknowledge
+
+    # How long to wait for the instrument to speak first before we try
+    # prompting it with an ENQ (seconds).
+    INITIAL_WAIT = 2.0
     
+    def setup(self):
+        """Configure socket options for instrument compatibility."""
+        self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self.request.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+
     def handle(self):
         client_ip = self.client_address[0]
         client_port = self.client_address[1]
@@ -286,28 +277,78 @@ class ASTMHandler(socketserver.StreamRequestHandler):
         start_time = time.time()
         total_bytes = 0
         frame_count = 0
+        prompted = False
         
         try:
             buffer = b''
             messages = []
-            
-            while True:
+
+            # ---- initial recv with a short timeout ----
+            # If the instrument sends nothing within INITIAL_WAIT seconds we
+            # assume it expects the server to speak first and send an ENQ.
+            self.request.settimeout(self.INITIAL_WAIT)
+            try:
                 chunk = self.request.recv(4096)
                 if not chunk:
-                    logger.info(f"[ASTM] Connection closed by {client_ip} after {time.time()-start_time:.2f}s, {total_bytes} bytes, {frame_count} frames")
-                    break
-                
+                    # Instrument connected and immediately disconnected.
+                    elapsed = time.time() - start_time
+                    logger.info(
+                        f"[ASTM] Connection probe from {client_ip}:{client_port} "
+                        f"(connected {elapsed:.2f}s, 0 bytes). "
+                        f"The instrument may expect the server to speak first — "
+                        f"will attempt ENQ prompt on next connection."
+                    )
+                    return  # nothing more we can do on a closed socket
                 total_bytes += len(chunk)
-                logger.debug(f"[ASTM] Received {len(chunk)} bytes from {client_ip} (total: {total_bytes})")
+                logger.info(
+                    f"[ASTM] Received {len(chunk)} bytes from {client_ip} "
+                    f"raw hex: {chunk[:64].hex(' ')}"
+                )
                 buffer += chunk
-                
+            except socket.timeout:
+                # Instrument didn't send anything — try prompting it
+                logger.info(
+                    f"[ASTM] No data from {client_ip} within {self.INITIAL_WAIT}s, "
+                    f"sending ENQ to prompt instrument"
+                )
+                try:
+                    self.request.sendall(self.ENQ)
+                    prompted = True
+                except (BrokenPipeError, ConnectionResetError):
+                    logger.warning(f"[ASTM] Instrument {client_ip} already disconnected before ENQ")
+                    return
+
+            # Switch to blocking mode (no timeout) for the rest
+            self.request.settimeout(None)
+            
+            while True:
+                # If we already have data in buffer from the initial read,
+                # process it before blocking on recv again.
+                if not buffer:
+                    chunk = self.request.recv(4096)
+                    if not chunk:
+                        elapsed = time.time() - start_time
+                        logger.info(
+                            f"[ASTM] Connection closed by {client_ip} after "
+                            f"{elapsed:.2f}s, {total_bytes} bytes, {frame_count} frames"
+                        )
+                        break
+                    total_bytes += len(chunk)
+                    logger.info(
+                        f"[ASTM] Received {len(chunk)} bytes from {client_ip} "
+                        f"(total: {total_bytes}) raw hex: {chunk[:64].hex(' ')}"
+                    )
+                    buffer += chunk
+
+                # ---- ENQ ----
                 if self.ENQ in buffer:
                     logger.info(f"[ASTM] ← Received ENQ from {client_ip}")
                     self.request.sendall(self.ACK)
                     logger.info(f"[ASTM] → Sent ACK to {client_ip}")
-                    buffer = buffer.replace(self.ENQ, b'')
+                    buffer = buffer.replace(self.ENQ, b'', 1)
                     continue
                 
+                # ---- EOT ----
                 if self.EOT in buffer:
                     logger.info(f"[ASTM] ← Received EOT from {client_ip} — {len(messages)} frames complete")
                     if messages:
@@ -315,9 +356,11 @@ class ASTMHandler(socketserver.StreamRequestHandler):
                         logger.info(f"[ASTM] Assembled {len(messages)} frames into {len(full_message)} char message")
                         self._process_message(full_message, client_ip)
                     messages = []
-                    buffer = buffer.replace(self.EOT, b'')
+                    buffer = buffer.replace(self.EOT, b'', 1)
                     continue
                 
+                # ---- STX … ETX frames ----
+                processed_frame = False
                 while self.STX in buffer and self.ETX in buffer:
                     stx_pos = buffer.find(self.STX)
                     etx_pos = buffer.find(self.ETX, stx_pos)
@@ -327,7 +370,6 @@ class ASTMHandler(socketserver.StreamRequestHandler):
                         checksum_end = etx_pos + 3
                         
                         if len(buffer) > checksum_end:
-                            checksum = buffer[etx_pos + 1:etx_pos + 3]
                             frame_count += 1
                             
                             if len(frame_data) > 0:
@@ -338,37 +380,35 @@ class ASTMHandler(socketserver.StreamRequestHandler):
                             
                             self.request.sendall(self.ACK)
                             buffer = buffer[checksum_end + 2:]
+                            processed_frame = True
                         else:
                             break
                     else:
                         break
+
+                # If nothing was processed from buffer, clear it so we
+                # block on recv() for more data next iteration
+                if not processed_frame and self.ENQ not in buffer and self.EOT not in buffer:
+                    buffer = b''
                         
+        except ConnectionResetError:
+            logger.warning(
+                f"[ASTM] Connection reset by {client_ip}:{client_port} after "
+                f"{time.time()-start_time:.2f}s, {total_bytes} bytes"
+            )
         except Exception as e:
             logger.error(f"[ASTM] Error handling connection from {client_ip}:{client_port}: {str(e)}")
     
     def _process_message(self, raw_data, client_ip):
-        """Send received ASTM message to the main Flask API"""
+        """Process received ASTM message via IngestService directly."""
         try:
-            logger.info(f"[ASTM] Parsed ASTM message from {client_ip}: {len(raw_data)} chars")
-            
-            port = os.getenv('PORT', 5001)
-            api_endpoint = f"http://localhost:{port}/astm/receive"
-            
-            try:
-                response = requests.post(
-                    api_endpoint,
-                    data=raw_data,
-                    headers={
-                        'Content-Type': 'text/plain',
-                        'X-Original-Source-IP': client_ip,
-                        'X-Protocol': 'ASTM'
-                    },
-                    timeout=10
-                )
-                logger.info(f"[ASTM] HTTP POST → Flask: {response.status_code}")
-            except Exception as e:
-                logger.error(f"[ASTM] Failed to forward to API: {str(e)}")
-                
+            logger.info(f"[ASTM] Processing ASTM message from {client_ip}: {len(raw_data)} chars")
+            ingest = self.server.ingest_service
+            if ingest is None:
+                logger.error("[ASTM] IngestService not available — message dropped")
+                return
+            result = ingest.process_astm(raw_data, client_ip)
+            logger.info(f"[ASTM] Processed → uid={result['message_uid']}, delivery={result['delivery']['status']}")
         except Exception as e:
             logger.error(f"[ASTM] Error processing ASTM message: {str(e)}")
 
@@ -378,25 +418,29 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
+    def __init__(self, server_address, RequestHandlerClass, ingest_service=None):
+        self.ingest_service = ingest_service
+        super().__init__(server_address, RequestHandlerClass)
+
 
 # ---------------------------------------------------------------------------
 # Listener Startup Functions
 # ---------------------------------------------------------------------------
-def start_mllp_listener(host, port):
+def start_mllp_listener(host, port, ingest_service):
     """Start MLLP listener in background thread"""
     try:
         logger.info(f"[MLLP] Starting listener on {host}:{port}")
-        server = ThreadedTCPServer((host, port), HL7MLLPHandler)
+        server = ThreadedTCPServer((host, port), HL7MLLPHandler, ingest_service=ingest_service)
         server.serve_forever()
     except Exception as e:
         logger.error(f"[MLLP] Failed to start listener: {str(e)}")
 
 
-def start_astm_listener(host, port):
+def start_astm_listener(host, port, ingest_service):
     """Start ASTM listener in background thread"""
     try:
         logger.info(f"[ASTM] Starting listener on {host}:{port}")
-        server = ThreadedTCPServer((host, port), ASTMHandler)
+        server = ThreadedTCPServer((host, port), ASTMHandler, ingest_service=ingest_service)
         server.serve_forever()
     except Exception as e:
         logger.error(f"[ASTM] Failed to start listener: {str(e)}")
@@ -435,12 +479,19 @@ def create_app() -> Flask:
     delivery_service.start()
     logger.info(f'Delivery service started: max_attempts={app.config["DELIVERY_MAX_ATTEMPTS"]}, poll_interval={app.config["DELIVERY_POLL_INTERVAL"]}s')
 
+    ingest_service = IngestService(
+        repository=repository,
+        delivery_service=delivery_service,
+        hl7_parser=hl7_parser,
+        astm_parser=astm_parser,
+    )
+
     # Start MLLP Listener in background thread
     mllp_host = app.config.get('MLLP_HOST', '0.0.0.0')
     mllp_port = app.config.get('MLLP_PORT', 6000)
     mllp_thread = _threading.Thread(
         target=start_mllp_listener,
-        args=(mllp_host, mllp_port),
+        args=(mllp_host, mllp_port, ingest_service),
         daemon=True,
         name="MLLP-Listener"
     )
@@ -452,19 +503,12 @@ def create_app() -> Flask:
     astm_port = app.config.get('ASTM_PORT', 7000)
     astm_thread = _threading.Thread(
         target=start_astm_listener,
-        args=(astm_host, astm_port),
+        args=(astm_host, astm_port, ingest_service),
         daemon=True,
         name="ASTM-Listener"
     )
     astm_thread.start()
     logger.info(f'ASTM listener thread started on {astm_host}:{astm_port}')
-
-    ingest_service = IngestService(
-        repository=repository,
-        delivery_service=delivery_service,
-        hl7_parser=hl7_parser,
-        astm_parser=astm_parser,
-    )
 
     app.extensions['repository'] = repository
     app.extensions['delivery_service'] = delivery_service
