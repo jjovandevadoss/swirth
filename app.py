@@ -67,53 +67,144 @@ logging.getLogger().addHandler(_MemoryHandler())
 # ---------------------------------------------------------------------------
 # MLLP Listener Classes (integrated from mllp_server.py)
 # ---------------------------------------------------------------------------
-class HL7MLLPHandler(socketserver.StreamRequestHandler):
-    """Handles incoming TCP connections containing HL7 messages wrapped in MLLP"""
-    
+class HL7MLLPHandler(socketserver.BaseRequestHandler):
+    """Handles incoming TCP connections containing HL7 messages wrapped in MLLP.
+    Also detects ASTM-style ENQ/ACK handshaking used by some instruments
+    (e.g. Horiba Yumizen) that label their mode as 'MLLP' but still initiate
+    with an ASTM handshake before sending HL7 data.
+    """
+
     # MLLP Constants
     SB = b'\x0b'  # Start Block (VT)
     EB = b'\x1c'  # End Block (FS)
     CR = b'\x0d'  # Carriage Return
-    timeout = None
-    
+
+    # ASTM handshake bytes (some instruments send these before MLLP data)
+    ENQ = b'\x05'  # Enquiry
+    ACK = b'\x06'  # Acknowledge
+    NAK = b'\x15'  # Negative Acknowledge
+    EOT = b'\x04'  # End of Transmission
+    STX = b'\x02'  # Start of Text
+    ETX = b'\x03'  # End of Text
+
+    def setup(self):
+        """Configure socket options for instrument compatibility."""
+        # Disable Nagle's algorithm — send small segments immediately
+        self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        # Enable TCP keepalive so the OS probes idle connections
+        self.request.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+
     def handle(self):
         client_ip = self.client_address[0]
         client_port = self.client_address[1]
         logger.info(f"[MLLP] New connection established from {client_ip}:{client_port}")
-        
+
         start_time = time.time()
         total_bytes = 0
         message_count = 0
-        
+
         try:
             buffer = b''
-            
+            astm_session_frames = []  # collect ASTM frames if instrument uses ENQ/ACK
+
             while True:
                 chunk = self.request.recv(4096)
                 if not chunk:
-                    logger.info(f"[MLLP] Connection closed by {client_ip} after {time.time()-start_time:.2f}s, {total_bytes} bytes, {message_count} messages")
+                    elapsed = time.time() - start_time
+                    if total_bytes == 0:
+                        logger.info(
+                            f"[MLLP] Connection probe from {client_ip}:{client_port} "
+                            f"(connected {elapsed:.2f}s, 0 bytes — instrument may be "
+                            f"polling or using ASTM protocol; consider switching to "
+                            f"ASTM port if this persists)"
+                        )
+                    else:
+                        logger.info(
+                            f"[MLLP] Connection closed by {client_ip} after "
+                            f"{elapsed:.2f}s, {total_bytes} bytes, {message_count} messages"
+                        )
                     break
-                
+
                 total_bytes += len(chunk)
-                logger.debug(f"[MLLP] Received {len(chunk)} bytes from {client_ip} (total: {total_bytes})")
+                logger.info(
+                    f"[MLLP] Received {len(chunk)} bytes from {client_ip} "
+                    f"(total: {total_bytes}) raw hex: {chunk[:64].hex(' ')}"
+                )
                 buffer += chunk
-                
+
+                # ----------------------------------------------------------
+                # 1) Detect ASTM ENQ — instrument wants to start a session
+                # ----------------------------------------------------------
+                while self.ENQ in buffer:
+                    logger.info(f"[MLLP] ← ASTM ENQ detected from {client_ip}, sending ACK")
+                    self.request.sendall(self.ACK)
+                    buffer = buffer.replace(self.ENQ, b'', 1)
+
+                # ----------------------------------------------------------
+                # 2) Detect ASTM EOT — instrument finished transmission
+                # ----------------------------------------------------------
+                while self.EOT in buffer:
+                    logger.info(f"[MLLP] ← ASTM EOT from {client_ip}")
+                    if astm_session_frames:
+                        full_message = '\n'.join(astm_session_frames)
+                        logger.info(
+                            f"[MLLP] Assembled {len(astm_session_frames)} ASTM frames "
+                            f"into {len(full_message)} char message"
+                        )
+                        self._process_astm_message(full_message, client_ip)
+                        message_count += 1
+                        astm_session_frames = []
+                    buffer = buffer.replace(self.EOT, b'', 1)
+
+                # ----------------------------------------------------------
+                # 3) Detect ASTM STX…ETX frames
+                # ----------------------------------------------------------
+                while self.STX in buffer and self.ETX in buffer:
+                    stx_pos = buffer.find(self.STX)
+                    etx_pos = buffer.find(self.ETX, stx_pos)
+                    if stx_pos != -1 and etx_pos != -1:
+                        frame_data = buffer[stx_pos + 1:etx_pos]
+                        # checksum (2 bytes) + CR+LF after ETX
+                        checksum_end = etx_pos + 3
+                        if len(buffer) > checksum_end:
+                            if len(frame_data) > 0:
+                                data = frame_data[1:].decode('utf-8', errors='ignore')
+                                astm_session_frames.append(data)
+                                logger.info(f"[MLLP] ← ASTM frame: {len(data)} bytes")
+                            self.request.sendall(self.ACK)
+                            buffer = buffer[checksum_end + 2:]
+                        else:
+                            break  # wait for more data
+                    else:
+                        break
+
+                # ----------------------------------------------------------
+                # 4) Standard MLLP framing: SB … EB CR
+                # ----------------------------------------------------------
                 while self.SB in buffer and self.EB + self.CR in buffer:
                     start = buffer.find(self.SB)
                     end = buffer.find(self.EB + self.CR)
-                    
+
                     if start != -1 and end != -1:
-                        hl7_data = buffer[start+1:end]
+                        hl7_data = buffer[start + 1:end]
                         message_count += 1
-                        logger.info(f"[MLLP] Extracted HL7 message #{message_count} from {client_ip} ({len(hl7_data)} bytes)")
-                        
+                        logger.info(
+                            f"[MLLP] Extracted HL7 message #{message_count} "
+                            f"from {client_ip} ({len(hl7_data)} bytes)"
+                        )
+
                         self._process_message(hl7_data, client_ip)
                         self._send_ack()
-                        
-                        buffer = buffer[end+2:]
+
+                        buffer = buffer[end + 2:]
                     else:
                         break
-                        
+
+        except ConnectionResetError:
+            logger.warning(
+                f"[MLLP] Connection reset by {client_ip}:{client_port} after "
+                f"{time.time()-start_time:.2f}s, {total_bytes} bytes"
+            )
         except Exception as e:
             logger.error(f"[MLLP] Error handling connection from {client_ip}:{client_port}: {str(e)}")
 
@@ -142,6 +233,29 @@ class HL7MLLPHandler(socketserver.StreamRequestHandler):
                 
         except Exception as e:
             logger.error(f"[MLLP] Error processing message: {str(e)}")
+
+    def _process_astm_message(self, raw_data, client_ip):
+        """Forward an ASTM message that arrived on the MLLP port."""
+        try:
+            logger.info(f"[MLLP] Forwarding ASTM message from {client_ip}: {len(raw_data)} chars")
+            port = os.getenv('PORT', 5001)
+            api_endpoint = f"http://localhost:{port}/astm/receive"
+            try:
+                response = requests.post(
+                    api_endpoint,
+                    data=raw_data,
+                    headers={
+                        'Content-Type': 'text/plain',
+                        'X-Original-Source-IP': client_ip,
+                        'X-Protocol': 'ASTM',
+                    },
+                    timeout=10,
+                )
+                logger.info(f"[MLLP] HTTP POST → Flask (ASTM): {response.status_code}")
+            except Exception as e:
+                logger.error(f"[MLLP] Failed to forward ASTM message to API: {str(e)}")
+        except Exception as e:
+            logger.error(f"[MLLP] Error processing ASTM message: {str(e)}")
 
     def _send_ack(self):
         """Send a basic HL7 ACK message back to machine"""
