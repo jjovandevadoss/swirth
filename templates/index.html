@@ -211,6 +211,103 @@
             margin: 0;
         }
         
+        .formatted-report-container {
+            padding: 1.5rem;
+            background: #fff;
+            flex: 1;
+            overflow: auto;
+            border-radius: 0 0 8px 8px;
+            display: none;
+        }
+        .formatted-report-container.active { display: block; }
+        
+        /* Formatted Report Styles */
+        .report-section { margin-bottom: 1.5rem; }
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-color);
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--primary-color);
+        }
+        .section-title i { color: var(--primary-color); margin-right: 0.5rem; }
+        .info-row {
+            display: flex;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-row .label {
+            font-weight: 600;
+            min-width: 140px;
+            color: var(--text-muted);
+        }
+        .info-row .value { color: var(--text-color); }
+        .info-row .value.name { font-weight: 600; color: var(--text-color); }
+        .info-row .value.test-name { font-weight: 600; color: var(--primary-color); }
+        
+        .results-table-container { overflow-x: auto; }
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        .results-table th {
+            background: #f8fafc;
+            padding: 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid var(--border-color);
+            color: var(--text-color);
+        }
+        .results-table td {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .results-table tr:hover { background: #f8fafc; }
+        .results-table tr.abnormal-high { background: #fee2e2; }
+        .results-table tr.abnormal-low { background: #dbeafe; }
+        .results-table tr.abnormal { background: #fef3c7; }
+        .results-table .test-name { font-weight: 600; }
+        .results-table .value { font-weight: 700; font-family: monospace; }
+        .results-table .flags { color: var(--danger-color); font-weight: 600; }
+        .text-danger { color: var(--danger-color); }
+        .text-warning { color: var(--warning-color); }
+        
+        .comments-list { padding: 0.5rem 0; }
+        .comment-item {
+            padding: 0.75rem;
+            background: #f8fafc;
+            border-left: 3px solid var(--warning-color);
+            margin-bottom: 0.5rem;
+            border-radius: 4px;
+        }
+        .comment-source {
+            font-weight: 700;
+            color: var(--text-muted);
+            margin-right: 0.5rem;
+        }
+        .flag-badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            background: var(--warning-color);
+            color: white;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-right: 0.25rem;
+        }
+        
+        .mfr-info { padding: 0.5rem 0; }
+        .mfr-item {
+            padding: 0.5rem;
+            background: #f8fafc;
+            margin-bottom: 0.5rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        
         /* Modal */
         .modal-overlay {
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
@@ -332,10 +429,14 @@
                     <div style="display: flex; gap: 0.5rem;">
                         <button class="tab-btn active" onclick="switchInspectorTab('parsed', this)">Parsed Data</button>
                         <button class="tab-btn" onclick="switchInspectorTab('raw', this)">Raw Message</button>
+                        <button class="tab-btn" id="formatted-tab-btn" onclick="switchInspectorTab('formatted', this)">Formatted Report</button>
                     </div>
                 </div>
                 <div id="json-renderer" class="json-viewer-container active"></div>
                 <div id="raw-renderer" class="raw-message-container"><pre id="raw-message-content">Select a message to view its raw content</pre></div>
+                <div id="formatted-renderer" class="formatted-report-container">
+                    <div id="formatted-content">Select an ASTM message to view formatted report</div>
+                </div>
             </div>
         </div>
     </main>
@@ -497,6 +598,29 @@ L|1|</textarea>
             // Update raw message view
             const rawMsg = msg.raw_message || 'No raw message available';
             $('#raw-message-content').text(rawMsg);
+            
+            // Update formatted report view (only for ASTM messages)
+            if (msg.protocol === 'ASTM') {
+                $('#formatted-tab-btn').show();
+                loadFormattedReport(msg.message_uid);
+            } else {
+                $('#formatted-tab-btn').hide();
+                $('#formatted-content').html('<p style="text-align:center; color:var(--text-muted); padding:2rem;">Formatted reports are only available for ASTM messages</p>');
+            }
+        }
+        
+        function loadFormattedReport(messageUid) {
+            $('#formatted-content').html('<div style="text-align:center; padding:2rem;"><i class="fas fa-spinner fa-spin"></i> Loading...</div>');
+            
+            $.get(`/api/messages/${messageUid}/formatted`, function(response) {
+                if (response.status === 'success') {
+                    $('#formatted-content').html(response.html);
+                } else {
+                    $('#formatted-content').html(`<p style="text-align:center; color:var(--danger-color); padding:2rem;">Failed to load report: ${response.message}</p>`);
+                }
+            }).fail(function(xhr) {
+                $('#formatted-content').html(`<p style="text-align:center; color:var(--danger-color); padding:2rem;">Error loading formatted report</p>`);
+            });
         }
         
         function switchInspectorTab(tab, btn) {
@@ -508,9 +632,15 @@ L|1|</textarea>
             if (tab === 'parsed') {
                 $('#json-renderer').addClass('active').show();
                 $('#raw-renderer').removeClass('active').hide();
-            } else {
+                $('#formatted-renderer').removeClass('active').hide();
+            } else if (tab === 'raw') {
                 $('#json-renderer').removeClass('active').hide();
                 $('#raw-renderer').addClass('active').show();
+                $('#formatted-renderer').removeClass('active').hide();
+            } else if (tab === 'formatted') {
+                $('#json-renderer').removeClass('active').hide();
+                $('#raw-renderer').removeClass('active').hide();
+                $('#formatted-renderer').addClass('active').show();
             }
         }
 

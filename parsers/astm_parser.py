@@ -46,8 +46,46 @@ class ASTMParser:
     _DEFAULT_REPEAT_SEP = '\\'
     _DEFAULT_ESCAPE = '&'
 
-    def __init__(self):
+    # Common LOINC code mappings for clinical test identification
+    _LOINC_CODES = {
+        '6690-2': 'White Blood Cell Count',
+        '789-8': 'Red Blood Cell Count',
+        '718-7': 'Hemoglobin',
+        '4544-3': 'Hematocrit',
+        '787-2': 'Mean Corpuscular Volume',
+        '785-6': 'Mean Corpuscular Hemoglobin',
+        '786-4': 'Mean Corpuscular Hemoglobin Concentration',
+        '788-0': 'RBC Distribution Width (CV)',
+        '21000-5': 'RBC Distribution Width (SD)',
+        '777-3': 'Platelet Count',
+        '51631-0': 'Platelet Distribution Width',
+        '51637-7': 'Plateletcrit',
+        '32623-1': 'Mean Platelet Volume',
+        '96354-6': 'Platelet Large Cell Count',
+        '48386-7': 'Platelet Large Cell Ratio',
+        '731-0': 'Lymphocyte Count',
+        '736-9': 'Lymphocyte %',
+        '742-7': 'Monocyte Count',
+        '5905-5': 'Monocyte %',
+        '751-8': 'Neutrophil Count',
+        '770-8': 'Neutrophil %',
+        '711-2': 'Eosinophil Count',
+        '713-8': 'Eosinophil %',
+        '704-7': 'Basophil Count',
+        '706-2': 'Basophil %',
+        '55432-9': 'Immature Cell Count',
+        '55433-7': 'Immature Cell %',
+        '43743-4': 'Atypical Lymphocyte Count',
+        '42250-1': 'Atypical Lymphocyte %',
+        '53115-2': 'Immature Granulocyte Count',
+        '71695-1': 'Immature Granulocyte %',
+    }
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         logger.info("ASTM Parser initialized")
+        self.config = config or {}
+        # Merge user LOINC codes with defaults
+        self.loinc_codes = {**self._LOINC_CODES, **self.config.get('loinc_codes', {})}
 
     # ------------------------------------------------------------------
     # Public interface
@@ -86,24 +124,24 @@ class ASTMParser:
                         fields, component_sep, repeat_sep, escape_char)
                 elif record_type == 'P':
                     data['patient'] = self._parse_patient(
-                        fields, component_sep)
+                        fields, component_sep, repeat_sep, escape_char)
                 elif record_type == 'O':
                     data.setdefault('orders', []).append(
-                        self._parse_order(fields, component_sep))
+                        self._parse_order(fields, component_sep, repeat_sep, escape_char))
                 elif record_type == 'R':
                     data.setdefault('results', []).append(
-                        self._parse_result(fields, component_sep))
+                        self._parse_result(fields, component_sep, repeat_sep, escape_char))
                 elif record_type == 'C':
                     data.setdefault('comments', []).append(
-                        self._parse_comment(fields, component_sep))
+                        self._parse_comment(fields, component_sep, repeat_sep, escape_char))
                 elif record_type == 'Q':
                     data.setdefault('queries', []).append(
-                        self._parse_query(fields, component_sep))
+                        self._parse_query(fields, component_sep, repeat_sep, escape_char))
                 elif record_type == 'M':
                     data.setdefault('manufacturer_records', []).append(
-                        self._parse_manufacturer(fields, component_sep))
+                        self._parse_manufacturer(fields, component_sep, repeat_sep, escape_char))
                 elif record_type == 'L':
-                    data['terminator'] = self._parse_terminator(fields)
+                    data['terminator'] = self._parse_terminator(fields, component_sep, repeat_sep, escape_char)
                 else:
                     # Unknown record type — preserve raw
                     data.setdefault('unknown_records', []).append(
@@ -212,33 +250,169 @@ class ASTMParser:
     # Utility helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _f(fields: List[str], index: int, default: Optional[str] = None
-           ) -> Optional[str]:
-        """Return fields[index] stripped, or default if absent/empty."""
+    def _unescape_field(self, value: str, component_sep: str, repeat_sep: str, 
+                        escape_char: str, field_sep: str) -> str:
+        r"""Decode ASTM E1394 escape sequences in field values.
+        
+        ASTM escape sequences (per E1394-97 §5.5.2):
+        \S\ - component separator (typically ^)
+        \R\ - repeat delimiter (typically \)
+        \E\ - escape character (typically &)
+        \F\ - field delimiter (typically |)
+        \T\ - subcomponent separator
+        \X##\ - hexadecimal character (## = 2 hex digits)
+        """
+        if not value or escape_char not in value:
+            return value
+        
+        result = []
+        i = 0
+        while i < len(value):
+            # Look for escape sequences starting with repeat_sep
+            if i < len(value) - 2 and value[i] == repeat_sep:
+                seq = value[i:i+3] if i+3 <= len(value) else value[i:]
+                
+                # Check for standard escape sequences
+                if seq == repeat_sep + 'S' + repeat_sep:
+                    result.append(component_sep)
+                    i += 3
+                    continue
+                elif seq == repeat_sep + 'R' + repeat_sep:
+                    result.append(repeat_sep)
+                    i += 3
+                    continue
+                elif seq == repeat_sep + 'E' + repeat_sep:
+                    result.append(escape_char)
+                    i += 3
+                    continue
+                elif seq == repeat_sep + 'F' + repeat_sep:
+                    result.append(field_sep)
+                    i += 3
+                    continue
+                elif seq == repeat_sep + 'T' + repeat_sep:
+                    result.append('&')  # subcomponent separator
+                    i += 3
+                    continue
+                # Check for hex escape \X##\
+                elif i < len(value) - 4 and value[i:i+2] == repeat_sep + 'X':
+                    hex_seq = value[i:i+5] if i+5 <= len(value) else None
+                    if hex_seq and len(hex_seq) == 5 and hex_seq[4] == repeat_sep:
+                        try:
+                            hex_code = hex_seq[2:4]
+                            char = chr(int(hex_code, 16))
+                            result.append(char)
+                            i += 5
+                            continue
+                        except ValueError:
+                            pass
+            
+            result.append(value[i])
+            i += 1
+        
+        return ''.join(result)
+
+    def _f(self, fields: List[str], index: int, default: Optional[str] = None,
+           unescape: bool = True, component_sep: str = '^', repeat_sep: str = '\\',
+           escape_char: str = '&', field_sep: str = '|') -> Optional[str]:
+        """Return fields[index] stripped and optionally unescaped, or default if absent/empty."""
         try:
             val = fields[index].strip()
-            return val if val else default
+            if not val:
+                return default
+            if unescape and self.config.get('enable_escape_decoding', True):
+                val = self._unescape_field(val, component_sep, repeat_sep, escape_char, field_sep)
+            return val
         except IndexError:
             return default
 
     def _components(self, value: Optional[str],
-                    component_sep: str) -> List[Optional[str]]:
+                    component_sep: str, unescape: bool = True,
+                    repeat_sep: str = '\\', escape_char: str = '&', 
+                    field_sep: str = '|') -> List[Optional[str]]:
         """Split a field value into components, returning None for empty parts."""
         if not value:
             return []
+        # First unescape the entire value if requested
+        if unescape and self.config.get('enable_escape_decoding', True):
+            value = self._unescape_field(value, component_sep, repeat_sep, escape_char, field_sep)
         parts = value.split(component_sep)
         return [p.strip() if p.strip() else None for p in parts]
+    
+    def _parse_reference_range(self, value: Optional[str]) -> Optional[Dict[str, Any]]:
+        """Parse reference range strings like '4.00 - 11.00^REFERENCE_RANGE' or '4.5-11.0'."""
+        if not value or not value.strip():
+            return None
+        
+        # Remove any trailing descriptive component (e.g., ^REFERENCE_RANGE)
+        range_str = value.split('^')[0].strip()
+        
+        # Try to parse 'min - max' format
+        if ' - ' in range_str:
+            parts = range_str.split(' - ')
+            if len(parts) == 2:
+                try:
+                    return {
+                        'min': float(parts[0].strip()),
+                        'max': float(parts[1].strip()),
+                        'raw': value
+                    }
+                except ValueError:
+                    pass
+        # Try 'min-max' format (no spaces)
+        elif '-' in range_str and not range_str.startswith('-'):
+            # Split on last hyphen to handle negative numbers
+            parts = range_str.rsplit('-', 1)
+            if len(parts) == 2:
+                try:
+                    return {
+                        'min': float(parts[0].strip()),
+                        'max': float(parts[1].strip()),
+                        'raw': value
+                    }
+                except ValueError:
+                    pass
+        
+        # Return raw if can't parse
+        return {'raw': value}
+    
+    def _get_test_name(self, test_id_dict: Optional[Dict[str, Any]]) -> Optional[str]:
+        """Get human-readable test name from test ID dict, checking LOINC codes."""
+        if not test_id_dict:
+            return None
+        
+        # First check if test_name is already provided
+        if test_id_dict.get('test_name'):
+            return test_id_dict['test_name']
+        
+        # Check all components for LOINC code (instruments vary in format)
+        # Look for a component that matches a LOINC pattern (digits-digits)
+        for key in ['loinc_code', 'test_code', 'test_id', 'mnemonic']:
+            value = test_id_dict.get(key)
+            if value and value in self.loinc_codes:
+                return self.loinc_codes[value]
+        
+        # Also check the raw value for LOINC patterns
+        raw = test_id_dict.get('raw', '')
+        if raw:
+            # Check if any part matches a known LOINC code
+            for loinc_code, name in self.loinc_codes.items():
+                if loinc_code in raw:
+                    return name
+        
+        # Fallback to test_id or mnemonic
+        return test_id_dict.get('mnemonic') or test_id_dict.get('test_id')
 
     def _parse_name(self, value: Optional[str],
-                    component_sep: str) -> Optional[Dict[str, Optional[str]]]:
+                    component_sep: str, repeat_sep: str = '\\',
+                    escape_char: str = '&', field_sep: str = '|') -> Optional[Dict[str, Optional[str]]]:
         """
         Parse a Name field (Last^First^Middle^Suffix^Prefix).
         Returns None when the value is absent.
         """
         if not value or not value.strip():
             return None
-        parts = self._components(value, component_sep)
+        parts = self._components(value, component_sep, unescape=True, 
+                                repeat_sep=repeat_sep, escape_char=escape_char, field_sep=field_sep)
         return {
             'last':   parts[0] if len(parts) > 0 else None,
             'first':  parts[1] if len(parts) > 1 else None,
@@ -249,14 +423,16 @@ class ASTMParser:
 
     def _parse_universal_test_id(
             self, value: Optional[str],
-            component_sep: str) -> Optional[Dict[str, Optional[str]]]:
+            component_sep: str, repeat_sep: str = '\\',
+            escape_char: str = '&', field_sep: str = '|') -> Optional[Dict[str, Optional[str]]]:
         """
         Parse a Universal Test ID field
         (TestID^TestName^LOINC^Manufacturer^SpecimenType^TestCode^Mnemonic).
         """
         if not value or not value.strip():
             return None
-        parts = self._components(value, component_sep)
+        parts = self._components(value, component_sep, unescape=True,
+                                repeat_sep=repeat_sep, escape_char=escape_char, field_sep=field_sep)
         result: Dict[str, Optional[str]] = {
             'test_id':       parts[0] if len(parts) > 0 else None,
             'test_name':     parts[1] if len(parts) > 1 else None,
@@ -268,6 +444,8 @@ class ASTMParser:
         }
         # Keep the raw string as well so callers can use it directly
         result['raw'] = value.strip()
+        # Add human-readable name from LOINC if available
+        result['display_name'] = self._get_test_name(result)
         return result
 
     # ------------------------------------------------------------------
@@ -296,25 +474,28 @@ class ASTMParser:
         12     Version Number  (LIS2-A2 or numeric e.g. E 1394-97)
         13     Date and Time of Message
         """
-        f = self._f
+        f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
+                                              component_sep=component_sep, repeat_sep=repeat_sep,
+                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
         return {
             'record_type':          'Header',
-            'field_delimiter':      f(fields, 1),
-            'message_control_id':   f(fields, 2),
-            'access_password':      f(fields, 3),
-            'sender_name':          f(fields, 4),
-            'sender_address':       f(fields, 5),
-            'sender_telephone':     f(fields, 7),
-            'sender_characteristics': f(fields, 8),
-            'receiver_id':          f(fields, 9),
-            'comments':             f(fields, 10),
-            'processing_id':        f(fields, 11),
-            'version':              f(fields, 12),
-            'timestamp':            f(fields, 13),
+            'field_delimiter':      f(1),
+            'message_control_id':   f(2),
+            'access_password':      f(3),
+            'sender_name':          f(4),
+            'sender_address':       f(5),
+            'sender_telephone':     f(7),
+            'sender_characteristics': f(8),
+            'receiver_id':          f(9),
+            'comments':             f(10),
+            'processing_id':        f(11),
+            'version':              f(12),
+            'timestamp':            f(13),
         }
 
     def _parse_patient(self, fields: List[str],
-                       component_sep: str) -> Dict[str, Any]:
+                       component_sep: str, repeat_sep: str = '\\',
+                       escape_char: str = '&') -> Dict[str, Any]:
         """
         P record — Patient Information (LIS2-A2 §5.7)
 
@@ -355,46 +536,49 @@ class ASTMParser:
         33     Hospital Institution
         34     Dosage Category
         """
-        f = self._f
+        f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
+                                              component_sep=component_sep, repeat_sep=repeat_sep,
+                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
         return {
             'record_type':              'Patient',
-            'sequence':                 f(fields, 1),
-            'practice_patient_id':      f(fields, 2),
-            'lab_patient_id':           f(fields, 3),
-            'patient_id_3':             f(fields, 4),
-            'name':                     self._parse_name(f(fields, 5), component_sep),
-            'mothers_maiden_name':      f(fields, 6),
-            'date_of_birth':            f(fields, 7),
-            'sex':                      f(fields, 8),
-            'race_ethnic_origin':       f(fields, 9),
-            'address':                  f(fields, 10),
-            'telephone':                f(fields, 12),
-            'attending_physician':      self._parse_name(f(fields, 13), component_sep),
-            'special_field_1':          f(fields, 14),
-            'special_field_2':          f(fields, 15),
-            'height':                   f(fields, 16),
-            'weight':                   f(fields, 17),
-            'diagnosis':                f(fields, 18),
-            'active_medications':       f(fields, 19),
-            'diet':                     f(fields, 20),
-            'practice_field_1':         f(fields, 21),
-            'practice_field_2':         f(fields, 22),
-            'admission_discharge_dates': f(fields, 23),
-            'admission_status':         f(fields, 24),
-            'location':                 f(fields, 25),
-            'diagnostic_code_type':     f(fields, 26),
-            'diagnostic_code':          f(fields, 27),
-            'religion':                 f(fields, 28),
-            'marital_status':           f(fields, 29),
-            'isolation_status':         f(fields, 30),
-            'language':                 f(fields, 31),
-            'hospital_service':         f(fields, 32),
-            'hospital_institution':     f(fields, 33),
-            'dosage_category':          f(fields, 34),
+            'sequence':                 f(1),
+            'practice_patient_id':      f(2),
+            'lab_patient_id':           f(3),
+            'patient_id_3':             f(4),
+            'name':                     self._parse_name(f(5), component_sep, repeat_sep, escape_char),
+            'mothers_maiden_name':      f(6),
+            'date_of_birth':            f(7),
+            'sex':                      f(8),
+            'race_ethnic_origin':       f(9),
+            'address':                  f(10),
+            'telephone':                f(12),
+            'attending_physician':      self._parse_name(f(13), component_sep, repeat_sep, escape_char),
+            'special_field_1':          f(14),
+            'special_field_2':          f(15),
+            'height':                   f(16),
+            'weight':                   f(17),
+            'diagnosis':                f(18),
+            'active_medications':       f(19),
+            'diet':                     f(20),
+            'practice_field_1':         f(21),
+            'practice_field_2':         f(22),
+            'admission_discharge_dates': f(23),
+            'admission_status':         f(24),
+            'location':                 f(25),
+            'diagnostic_code_type':     f(26),
+            'diagnostic_code':          f(27),
+            'religion':                 f(28),
+            'marital_status':           f(29),
+            'isolation_status':         f(30),
+            'language':                 f(31),
+            'hospital_service':         f(32),
+            'hospital_institution':     f(33),
+            'dosage_category':          f(34),
         }
 
     def _parse_order(self, fields: List[str],
-                     component_sep: str) -> Dict[str, Any]:
+                     component_sep: str, repeat_sep: str = '\\',
+                     escape_char: str = '&') -> Dict[str, Any]:
         """
         O record — Test Order Record (LIS2-A2 §5.8)
 
@@ -431,43 +615,46 @@ class ASTMParser:
         29     Specimen Service
         30     Specimen Institution
         """
-        f = self._f
+        f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
+                                              component_sep=component_sep, repeat_sep=repeat_sep,
+                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
         return {
             'record_type':              'Order',
-            'sequence':                 f(fields, 1),
-            'specimen_id':              f(fields, 2),
-            'instrument_specimen_id':   f(fields, 3),
+            'sequence':                 f(1),
+            'specimen_id':              f(2),
+            'instrument_specimen_id':   f(3),
             'universal_test_id':        self._parse_universal_test_id(
-                                            f(fields, 4), component_sep),
-            'priority':                 f(fields, 5),
-            'ordered_datetime':         f(fields, 6),
-            'collection_datetime':      f(fields, 7),
-            'collection_end_time':      f(fields, 8),
-            'collection_volume':        f(fields, 9),
-            'collector_id':             f(fields, 10),
-            'action_code':              f(fields, 11),
-            'danger_code':              f(fields, 12),
-            'clinical_information':     f(fields, 13),
-            'specimen_received_datetime': f(fields, 14),
-            'specimen_descriptor':      f(fields, 15),
-            'ordering_physician':       self._parse_name(f(fields, 16), component_sep),
-            'physician_telephone':      f(fields, 17),
-            'user_field_1':             f(fields, 18),
-            'user_field_2':             f(fields, 19),
-            'lab_field_1':              f(fields, 20),
-            'lab_field_2':              f(fields, 21),
-            'results_reported_datetime': f(fields, 22),
-            'instrument_charge':        f(fields, 23),
-            'instrument_section_id':    f(fields, 24),
-            'report_type':              f(fields, 25),
-            'specimen_collector_location': f(fields, 27),
-            'nosocomial_infection_flag': f(fields, 28),
-            'specimen_service':         f(fields, 29),
-            'specimen_institution':     f(fields, 30),
+                                            f(4), component_sep, repeat_sep, escape_char),
+            'priority':                 f(5),
+            'ordered_datetime':         f(6),
+            'collection_datetime':      f(7),
+            'collection_end_time':      f(8),
+            'collection_volume':        f(9),
+            'collector_id':             f(10),
+            'action_code':              f(11),
+            'danger_code':              f(12),
+            'clinical_information':     f(13),
+            'specimen_received_datetime': f(14),
+            'specimen_descriptor':      f(15),
+            'ordering_physician':       self._parse_name(f(16), component_sep, repeat_sep, escape_char),
+            'physician_telephone':      f(17),
+            'user_field_1':             f(18),
+            'user_field_2':             f(19),
+            'lab_field_1':              f(20),
+            'lab_field_2':              f(21),
+            'results_reported_datetime': f(22),
+            'instrument_charge':        f(23),
+            'instrument_section_id':    f(24),
+            'report_type':              f(25),
+            'specimen_collector_location': f(27),
+            'nosocomial_infection_flag': f(28),
+            'specimen_service':         f(29),
+            'specimen_institution':     f(30),
         }
 
     def _parse_result(self, fields: List[str],
-                      component_sep: str) -> Dict[str, Any]:
+                      component_sep: str, repeat_sep: str = '\\',
+                      escape_char: str = '&') -> Dict[str, Any]:
         """
         R record — Result Record (LIS2-A2 §5.9)
 
@@ -487,27 +674,34 @@ class ASTMParser:
         12     Date/Time Test Completed
         13     Instrument Identification
         """
-        f = self._f
-        return {
+        f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
+                                              component_sep=component_sep, repeat_sep=repeat_sep,
+                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
+        
+        ref_range_raw = f(5)
+        result = {
             'record_type':              'Result',
-            'sequence':                 f(fields, 1),
+            'sequence':                 f(1),
             'universal_test_id':        self._parse_universal_test_id(
-                                            f(fields, 2), component_sep),
-            'value':                    f(fields, 3),
-            'units':                    f(fields, 4),
-            'reference_range':          f(fields, 5),
-            'abnormal_flags':           f(fields, 6),
-            'abnormality_nature':       f(fields, 7),
-            'result_status':            f(fields, 8),
-            'normative_change_date':    f(fields, 9),
-            'operator_id':              f(fields, 10),
-            'test_started_datetime':    f(fields, 11),
-            'test_completed_datetime':  f(fields, 12),
-            'instrument_id':            f(fields, 13),
+                                            f(2), component_sep, repeat_sep, escape_char),
+            'value':                    f(3),
+            'units':                    f(4),
+            'reference_range':          ref_range_raw,
+            'reference_range_parsed':   self._parse_reference_range(ref_range_raw),
+            'abnormal_flags':           f(6),
+            'abnormality_nature':       f(7),
+            'result_status':            f(8),
+            'normative_change_date':    f(9),
+            'operator_id':              f(10),
+            'test_started_datetime':    f(11),
+            'test_completed_datetime':  f(12),
+            'instrument_id':            f(13),
         }
+        return result
 
     def _parse_comment(self, fields: List[str],
-                       component_sep: str) -> Dict[str, Any]:
+                       component_sep: str, repeat_sep: str = '\\',
+                       escape_char: str = '&') -> Dict[str, Any]:
         """
         C record — Comment Record (LIS2-A2 §5.10)
 
@@ -518,17 +712,30 @@ class ASTMParser:
         3      Comment Text
         4      Comment Type
         """
-        f = self._f
+        f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
+                                              component_sep=component_sep, repeat_sep=repeat_sep,
+                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
+        
+        comment_text = f(3)
+        # Parse comment text to extract individual flags/codes if separated by delimiters
+        parsed_comments = None
+        if comment_text:
+            # Split on repeat separator if present (e.g., \S for embedded separators)
+            parsed_comments = self._components(comment_text, component_sep, unescape=True,
+                                              repeat_sep=repeat_sep, escape_char=escape_char)
+        
         return {
             'record_type':    'Comment',
-            'sequence':       f(fields, 1),
-            'comment_source': f(fields, 2),
-            'comment_text':   f(fields, 3),
-            'comment_type':   f(fields, 4),
+            'sequence':       f(1),
+            'comment_source': f(2),
+            'comment_text':   comment_text,
+            'comment_type':   f(4),
+            'parsed_comments': parsed_comments,
         }
 
     def _parse_query(self, fields: List[str],
-                     component_sep: str) -> Dict[str, Any]:
+                     component_sep: str, repeat_sep: str = '\\',
+                     escape_char: str = '&') -> Dict[str, Any]:
         """
         Q record — Request Information Record (LIS2-A2 §5.11)
 
@@ -547,26 +754,29 @@ class ASTMParser:
         11     User Field 2
         12     Request Information Status Codes
         """
-        f = self._f
+        f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
+                                              component_sep=component_sep, repeat_sep=repeat_sep,
+                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
         return {
             'record_type':              'Query',
-            'sequence':                 f(fields, 1),
-            'starting_range_id':        f(fields, 2),
-            'ending_range_id':          f(fields, 3),
+            'sequence':                 f(1),
+            'starting_range_id':        f(2),
+            'ending_range_id':          f(3),
             'universal_test_id':        self._parse_universal_test_id(
-                                            f(fields, 4), component_sep),
-            'time_limits':              f(fields, 5),
-            'begin_results_datetime':   f(fields, 6),
-            'end_results_datetime':     f(fields, 7),
-            'requesting_physician':     self._parse_name(f(fields, 8), component_sep),
-            'physician_telephone':      f(fields, 9),
-            'user_field_1':             f(fields, 10),
-            'user_field_2':             f(fields, 11),
-            'status_codes':             f(fields, 12),
+                                            f(4), component_sep, repeat_sep, escape_char),
+            'time_limits':              f(5),
+            'begin_results_datetime':   f(6),
+            'end_results_datetime':     f(7),
+            'requesting_physician':     self._parse_name(f(8), component_sep, repeat_sep, escape_char),
+            'physician_telephone':      f(9),
+            'user_field_1':             f(10),
+            'user_field_2':             f(11),
+            'status_codes':             f(12),
         }
 
     def _parse_manufacturer(self, fields: List[str],
-                             component_sep: str) -> Dict[str, Any]:
+                             component_sep: str, repeat_sep: str = '\\',
+                             escape_char: str = '&') -> Dict[str, Any]:
         """
         M record — Manufacturer Information Record (LIS2-A2 §5.12)
 
@@ -577,21 +787,24 @@ class ASTMParser:
         3      Name of Implementation-Specific Definition
         4-13   Implementation-specific fields
         """
-        f = self._f
+        f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
+                                              component_sep=component_sep, repeat_sep=repeat_sep,
+                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
         record: Dict[str, Any] = {
             'record_type':            'Manufacturer',
-            'sequence':               f(fields, 1),
-            'definition_scope':       f(fields, 2),
-            'definition_name':        f(fields, 3),
+            'sequence':               f(1),
+            'definition_scope':       f(2),
+            'definition_name':        f(3),
         }
         # Capture any extra implementation-specific fields
-        extras = [f(fields, i) for i in range(4, min(14, len(fields)))]
+        extras = [f(i) for i in range(4, min(14, len(fields)))]
         non_null = [v for v in extras if v is not None]
         if non_null:
             record['implementation_fields'] = extras
         return record
 
-    def _parse_terminator(self, fields: List[str]) -> Dict[str, Any]:
+    def _parse_terminator(self, fields: List[str], component_sep: str = '^',
+                         repeat_sep: str = '\\', escape_char: str = '&') -> Dict[str, Any]:
         """
         L record — Message Terminator (LIS2-A2 §5.13)
 
@@ -600,10 +813,13 @@ class ASTMParser:
         1      Sequence Number
         2      Termination Code  (N=Normal, I=Not asking, P=Process, Q=Query...)
         """
+        f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
+                                              component_sep=component_sep, repeat_sep=repeat_sep,
+                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
         return {
             'record_type':      'Terminator',
-            'sequence':         self._f(fields, 1),
-            'termination_code': self._f(fields, 2),
+            'sequence':         f(1),
+            'termination_code': f(2),
         }
 
 
