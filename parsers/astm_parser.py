@@ -14,7 +14,7 @@ Record types:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ class ASTMParser:
 
             data: Dict[str, Any] = {
                 'protocol': 'ASTM',
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
             }
 
             for record in records:
@@ -121,27 +121,27 @@ class ASTMParser:
 
                 if record_type == 'H':
                     data['header'] = self._parse_header(
-                        fields, component_sep, repeat_sep, escape_char)
+                        fields, field_sep, component_sep, repeat_sep, escape_char)
                 elif record_type == 'P':
                     data['patient'] = self._parse_patient(
-                        fields, component_sep, repeat_sep, escape_char)
+                        fields, field_sep, component_sep, repeat_sep, escape_char)
                 elif record_type == 'O':
                     data.setdefault('orders', []).append(
-                        self._parse_order(fields, component_sep, repeat_sep, escape_char))
+                        self._parse_order(fields, field_sep, component_sep, repeat_sep, escape_char))
                 elif record_type == 'R':
                     data.setdefault('results', []).append(
-                        self._parse_result(fields, component_sep, repeat_sep, escape_char))
+                        self._parse_result(fields, field_sep, component_sep, repeat_sep, escape_char))
                 elif record_type == 'C':
                     data.setdefault('comments', []).append(
-                        self._parse_comment(fields, component_sep, repeat_sep, escape_char))
+                        self._parse_comment(fields, field_sep, component_sep, repeat_sep, escape_char))
                 elif record_type == 'Q':
                     data.setdefault('queries', []).append(
-                        self._parse_query(fields, component_sep, repeat_sep, escape_char))
+                        self._parse_query(fields, field_sep, component_sep, repeat_sep, escape_char))
                 elif record_type == 'M':
                     data.setdefault('manufacturer_records', []).append(
-                        self._parse_manufacturer(fields, component_sep, repeat_sep, escape_char))
+                        self._parse_manufacturer(fields, field_sep, component_sep, repeat_sep, escape_char))
                 elif record_type == 'L':
-                    data['terminator'] = self._parse_terminator(fields, component_sep, repeat_sep, escape_char)
+                    data['terminator'] = self._parse_terminator(fields, field_sep, component_sep, repeat_sep, escape_char)
                 else:
                     # Unknown record type — preserve raw
                     data.setdefault('unknown_records', []).append(
@@ -153,7 +153,7 @@ class ASTMParser:
             logger.error(f"Error parsing ASTM message: {e}")
             return {
                 'protocol': 'ASTM',
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'error': str(e),
                 'raw_message': astm_message,
             }
@@ -262,7 +262,7 @@ class ASTMParser:
         \T\ - subcomponent separator
         \X##\ - hexadecimal character (## = 2 hex digits)
         """
-        if not value or escape_char not in value:
+        if not value or repeat_sep not in value:
             return value
         
         result = []
@@ -452,7 +452,7 @@ class ASTMParser:
     # Record parsers
     # ------------------------------------------------------------------
 
-    def _parse_header(self, fields: List[str], component_sep: str,
+    def _parse_header(self, fields: List[str], field_sep: str, component_sep: str,
                       repeat_sep: str, escape_char: str) -> Dict[str, Any]:
         """
         H record — Message Header (LIS2-A2 §5.6)
@@ -476,7 +476,7 @@ class ASTMParser:
         """
         f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
                                               component_sep=component_sep, repeat_sep=repeat_sep,
-                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
+                                              escape_char=escape_char, field_sep=field_sep)
         return {
             'record_type':          'Header',
             'field_delimiter':      f(1),
@@ -493,7 +493,7 @@ class ASTMParser:
             'timestamp':            f(13),
         }
 
-    def _parse_patient(self, fields: List[str],
+    def _parse_patient(self, fields: List[str], field_sep: str,
                        component_sep: str, repeat_sep: str = '\\',
                        escape_char: str = '&') -> Dict[str, Any]:
         """
@@ -538,7 +538,7 @@ class ASTMParser:
         """
         f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
                                               component_sep=component_sep, repeat_sep=repeat_sep,
-                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
+                                              escape_char=escape_char, field_sep=field_sep)
         return {
             'record_type':              'Patient',
             'sequence':                 f(1),
@@ -576,7 +576,7 @@ class ASTMParser:
             'dosage_category':          f(34),
         }
 
-    def _parse_order(self, fields: List[str],
+    def _parse_order(self, fields: List[str], field_sep: str,
                      component_sep: str, repeat_sep: str = '\\',
                      escape_char: str = '&') -> Dict[str, Any]:
         """
@@ -617,14 +617,14 @@ class ASTMParser:
         """
         f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
                                               component_sep=component_sep, repeat_sep=repeat_sep,
-                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
+                                              escape_char=escape_char, field_sep=field_sep)
         return {
             'record_type':              'Order',
             'sequence':                 f(1),
             'specimen_id':              f(2),
             'instrument_specimen_id':   f(3),
             'universal_test_id':        self._parse_universal_test_id(
-                                            f(4), component_sep, repeat_sep, escape_char),
+                                            f(4), component_sep, repeat_sep, escape_char, field_sep),
             'priority':                 f(5),
             'ordered_datetime':         f(6),
             'collection_datetime':      f(7),
@@ -652,7 +652,7 @@ class ASTMParser:
             'specimen_institution':     f(30),
         }
 
-    def _parse_result(self, fields: List[str],
+    def _parse_result(self, fields: List[str], field_sep: str,
                       component_sep: str, repeat_sep: str = '\\',
                       escape_char: str = '&') -> Dict[str, Any]:
         """
@@ -676,14 +676,14 @@ class ASTMParser:
         """
         f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
                                               component_sep=component_sep, repeat_sep=repeat_sep,
-                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
+                                              escape_char=escape_char, field_sep=field_sep)
         
         ref_range_raw = f(5)
         result = {
             'record_type':              'Result',
             'sequence':                 f(1),
             'universal_test_id':        self._parse_universal_test_id(
-                                            f(2), component_sep, repeat_sep, escape_char),
+                                            f(2), component_sep, repeat_sep, escape_char, field_sep),
             'value':                    f(3),
             'units':                    f(4),
             'reference_range':          ref_range_raw,
@@ -699,7 +699,7 @@ class ASTMParser:
         }
         return result
 
-    def _parse_comment(self, fields: List[str],
+    def _parse_comment(self, fields: List[str], field_sep: str,
                        component_sep: str, repeat_sep: str = '\\',
                        escape_char: str = '&') -> Dict[str, Any]:
         """
@@ -714,7 +714,7 @@ class ASTMParser:
         """
         f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
                                               component_sep=component_sep, repeat_sep=repeat_sep,
-                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
+                                              escape_char=escape_char, field_sep=field_sep)
         
         comment_text = f(3)
         # Parse comment text to extract individual flags/codes if separated by delimiters
@@ -733,7 +733,7 @@ class ASTMParser:
             'parsed_comments': parsed_comments,
         }
 
-    def _parse_query(self, fields: List[str],
+    def _parse_query(self, fields: List[str], field_sep: str,
                      component_sep: str, repeat_sep: str = '\\',
                      escape_char: str = '&') -> Dict[str, Any]:
         """
@@ -756,14 +756,14 @@ class ASTMParser:
         """
         f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
                                               component_sep=component_sep, repeat_sep=repeat_sep,
-                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
+                                              escape_char=escape_char, field_sep=field_sep)
         return {
             'record_type':              'Query',
             'sequence':                 f(1),
             'starting_range_id':        f(2),
             'ending_range_id':          f(3),
             'universal_test_id':        self._parse_universal_test_id(
-                                            f(4), component_sep, repeat_sep, escape_char),
+                                            f(4), component_sep, repeat_sep, escape_char, field_sep),
             'time_limits':              f(5),
             'begin_results_datetime':   f(6),
             'end_results_datetime':     f(7),
@@ -774,7 +774,7 @@ class ASTMParser:
             'status_codes':             f(12),
         }
 
-    def _parse_manufacturer(self, fields: List[str],
+    def _parse_manufacturer(self, fields: List[str], field_sep: str,
                              component_sep: str, repeat_sep: str = '\\',
                              escape_char: str = '&') -> Dict[str, Any]:
         """
@@ -789,7 +789,7 @@ class ASTMParser:
         """
         f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
                                               component_sep=component_sep, repeat_sep=repeat_sep,
-                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
+                                              escape_char=escape_char, field_sep=field_sep)
         record: Dict[str, Any] = {
             'record_type':            'Manufacturer',
             'sequence':               f(1),
@@ -803,7 +803,7 @@ class ASTMParser:
             record['implementation_fields'] = extras
         return record
 
-    def _parse_terminator(self, fields: List[str], component_sep: str = '^',
+    def _parse_terminator(self, fields: List[str], field_sep: str = '|', component_sep: str = '^',
                          repeat_sep: str = '\\', escape_char: str = '&') -> Dict[str, Any]:
         """
         L record — Message Terminator (LIS2-A2 §5.13)
@@ -815,7 +815,7 @@ class ASTMParser:
         """
         f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
                                               component_sep=component_sep, repeat_sep=repeat_sep,
-                                              escape_char=escape_char, field_sep=self._DEFAULT_FIELD_SEP)
+                                              escape_char=escape_char, field_sep=field_sep)
         return {
             'record_type':      'Terminator',
             'sequence':         f(1),

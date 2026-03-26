@@ -48,6 +48,12 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Test files and outputs
+test_*.py
+test_*.html
+test_*.json
+*.pdf
+
 # Database files
 *.db
 messages.db
