@@ -147,6 +147,21 @@ class ASTMParser:
                     data.setdefault('unknown_records', []).append(
                         {'record_type': record_type, 'raw': record})
 
+            # Post-processing: enrich sparse Patient record from Order data
+            # (Sysmex instruments embed patient info in O record specimen_id)
+            patient = data.get('patient', {})
+            for order in data.get('orders', []):
+                sid = order.get('specimen_id_parsed', {})
+                if sid:
+                    if not patient.get('name') and sid.get('patient_name'):
+                        patient['name'] = {'last': sid['patient_name'], 'first': None,
+                                           'middle': None, 'suffix': None, 'prefix': None}
+                    if not patient.get('practice_patient_id') and sid.get('accession_number'):
+                        patient['practice_patient_id'] = sid['accession_number']
+                    break  # use first order only
+            if patient:
+                data['patient'] = patient
+
             return data
 
         except Exception as e:
@@ -235,10 +250,11 @@ class ASTMParser:
                 # The next few characters are component/repeat/escape delimiters
                 if len(record) > 2:
                     delim_field = record[2:].split(field_sep)[0]
-                    component_sep = delim_field[0] if len(delim_field) > 0 \
-                        else self._DEFAULT_COMPONENT_SEP
-                    repeat_sep   = delim_field[1] if len(delim_field) > 1 \
+                    # LIS2-A2 order: repeat, component, escape
+                    repeat_sep   = delim_field[0] if len(delim_field) > 0 \
                         else self._DEFAULT_REPEAT_SEP
+                    component_sep = delim_field[1] if len(delim_field) > 1 \
+                        else self._DEFAULT_COMPONENT_SEP
                     escape_char  = delim_field[2] if len(delim_field) > 2 \
                         else self._DEFAULT_ESCAPE
                     return field_sep, component_sep, repeat_sep, escape_char
@@ -618,7 +634,7 @@ class ASTMParser:
         f = lambda idx, default=None: self._f(fields, idx, default, unescape=True,
                                               component_sep=component_sep, repeat_sep=repeat_sep,
                                               escape_char=escape_char, field_sep=field_sep)
-        return {
+        record = {
             'record_type':              'Order',
             'sequence':                 f(1),
             'specimen_id':              f(2),
@@ -651,6 +667,17 @@ class ASTMParser:
             'specimen_service':         f(29),
             'specimen_institution':     f(30),
         }
+        # Sysmex convention: specimen_id encodes PatientName^^AccessionNo^SeqNo
+        specimen_id_raw = record.get('specimen_id')
+        if specimen_id_raw and component_sep in specimen_id_raw:
+            sid_parts = specimen_id_raw.split(component_sep)
+            record['specimen_id_parsed'] = {
+                'patient_name':    sid_parts[0] if len(sid_parts) > 0 and sid_parts[0] else None,
+                'field_2':         sid_parts[1] if len(sid_parts) > 1 and sid_parts[1] else None,
+                'accession_number': sid_parts[2] if len(sid_parts) > 2 and sid_parts[2] else None,
+                'sequence':        sid_parts[3] if len(sid_parts) > 3 and sid_parts[3] else None,
+            }
+        return record
 
     def _parse_result(self, fields: List[str], field_sep: str,
                       component_sep: str, repeat_sep: str = '\\',
