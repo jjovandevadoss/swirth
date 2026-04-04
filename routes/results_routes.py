@@ -26,6 +26,11 @@ def create_results_blueprint(repository):
     def get_history():
         return jsonify(repository.get_recent_messages(limit=100))
 
+    @results_bp.route("/api/messages", methods=["DELETE"])
+    def clear_messages():
+        count = repository.clear_all_messages()
+        return jsonify({"status": "success", "deleted": count}), 200
+
     @results_bp.route("/results/hl7/latest", methods=["GET"])
     def latest_hl7():
         result = repository.get_latest_by_protocol("HL7")

@@ -415,7 +415,12 @@
             <div class="card list-pane">
                 <div class="card-header">
                     <span>Recent Activity</span>
-                    <span style="font-size: 0.8rem; color: var(--text-muted);">Real-time</span>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <span style="font-size: 0.8rem; color: var(--text-muted);">Real-time</span>
+                        <button class="btn" style="font-size: 0.75rem; padding: 0.3rem 0.7rem; color: var(--danger-color); border-color: var(--danger-color);" onclick="confirmClearDatabase()">
+                            <i class="fas fa-trash"></i> Clear DB
+                        </button>
+                    </div>
                 </div>
                 <div class="message-list" id="messageList">
                     <!-- Populated by JS -->
@@ -500,6 +505,27 @@ L|1|</textarea>
 
         function openModal() { $('#simulatorModal').css('display', 'flex').hide().fadeIn(200); }
         function closeModal() { $('#simulatorModal').fadeOut(200); }
+
+        function confirmClearDatabase() {
+            if (!confirm('Clear all messages from the database? This cannot be undone.')) return;
+            $.ajax({
+                url: '/api/messages',
+                method: 'DELETE',
+                success: function(data) {
+                    state.messages = [];
+                    state.selectedIndex = null;
+                    renderList();
+                    renderStats();
+                    $('#json-renderer').empty();
+                    $('#raw-message-content').text('Select a message to view its raw content');
+                    $('#formatted-content').html('Select an ASTM message to view formatted report');
+                    showToast(`Cleared ${data.deleted} message(s) from the database.`, 'success');
+                },
+                error: function() {
+                    showToast('Failed to clear the database.', 'error');
+                }
+            });
+        }
 
         function setProtocol(proto, btn) {
             $('#protocolInput').val(proto);

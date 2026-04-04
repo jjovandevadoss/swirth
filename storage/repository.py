@@ -103,6 +103,11 @@ class MessageRepository:
             ).fetchall()
         return [self._row_to_dict(row) for row in rows]
 
+    def clear_all_messages(self) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM messages")
+            return cursor.rowcount
+
     def get_pending_retries(self, max_attempts: int = 5, limit: int = 50) -> List[Dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
