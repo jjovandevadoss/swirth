@@ -2,6 +2,7 @@
 Service for applying field mapping transformations to parsed HL7/ASTM data
 """
 
+import json
 import logging
 from typing import Dict, Any, List, Optional
 import re
@@ -27,7 +28,7 @@ class MappingService:
     
     def apply_mapping(self, parsed_data: Dict[str, Any], protocol: str = None) -> Dict[str, Any]:
         """
-        Apply the active mapping profile to parsed data.
+        Apply the best matching active mapping profile to parsed data.
         
         Args:
             parsed_data: Parsed HL7 or ASTM data dictionary
@@ -36,8 +37,25 @@ class MappingService:
         Returns:
             Transformed data dictionary
         """
-        # Get active profile
+        selectors = self._extract_profile_selectors(parsed_data, protocol)
+
         try:
+            # Check for an explicit machine assignment first
+            assignment = self.mapping_repository.get_machine_assignment(
+                selectors.get('protocol', 'ALL'),
+                selectors.get('instrument_model') or '',
+                selectors.get('instrument_serial') or '',
+            )
+            if assignment is not None:
+                profile_id = assignment.get('profile_id')
+                if profile_id is None:
+                    # Explicitly set to "Default" — skip mapping entirely
+                    logger.debug("Machine assignment set to default; skipping custom mapping")
+                    return parsed_data
+                active_profile = self.mapping_repository.get_profile(profile_id)
+            else:
+                active_profile = self.mapping_repository.get_matching_profile(**selectors)
+        except AttributeError:
             active_profile = self.mapping_repository.get_active_profile()
         except Exception as e:
             logger.error(f"Failed to get active mapping profile: {str(e)}")
@@ -47,20 +65,20 @@ class MappingService:
             logger.debug("No active mapping profile, returning original data")
             return parsed_data
         
-        # Check protocol filter
-        protocol_filter = active_profile.get('protocol_filter', 'ALL')
-        if protocol_filter != 'ALL' and protocol and protocol.upper() != protocol_filter.upper():
-            logger.debug(f"Protocol {protocol} does not match filter {protocol_filter}, skipping mapping")
-            return parsed_data
-        
         config = active_profile.get('config', [])
         if not config:
             logger.warning(f"Active profile '{active_profile['name']}' has no mapping rules")
             return parsed_data
         
-        logger.info(f"Applying mapping profile: {active_profile['name']} with {len(config)} rules")
+        logger.info(
+            "Applying mapping profile '%s' with %d rules (model=%s, serial=%s, test_profile=%s)",
+            active_profile['name'],
+            len(config),
+            selectors.get('instrument_model'),
+            selectors.get('instrument_serial'),
+            selectors.get('test_profile'),
+        )
         
-        # Apply mapping rules
         try:
             result = self._apply_rules(parsed_data, config)
             logger.debug(f"Successfully applied mapping, output has {len(result)} top-level fields")
@@ -68,6 +86,28 @@ class MappingService:
         except Exception as e:
             logger.error(f"Failed to apply mapping: {str(e)}")
             return parsed_data
+
+    def _extract_profile_selectors(self, parsed_data: Dict[str, Any], protocol: str = None) -> Dict[str, Any]:
+        """Extract runtime selectors used to find the best mapping profile."""
+        if not isinstance(parsed_data, dict):
+            return {
+                'protocol': protocol or 'ALL',
+                'instrument_model': None,
+                'instrument_serial': None,
+                'test_profile': None,
+            }
+
+        instrument = parsed_data.get('instrument') or {}
+        first_order = (parsed_data.get('orders') or [{}])[0]
+        if not isinstance(first_order, dict):
+            first_order = {}
+
+        return {
+            'protocol': protocol or parsed_data.get('protocol') or 'ALL',
+            'instrument_model': instrument.get('model') if isinstance(instrument, dict) else None,
+            'instrument_serial': instrument.get('serial') if isinstance(instrument, dict) else None,
+            'test_profile': parsed_data.get('message_profile') or first_order.get('test_profile'),
+        }
     
     def _apply_rules(self, data: Dict[str, Any], rules: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -88,16 +128,16 @@ class MappingService:
             default_value = rule.get('default_value')
             transform = rule.get('transform')
             
-            if not source_path or not target_path:
+            if not target_path or (not source_path and default_value is None):
                 logger.warning(f"Skipping invalid rule: {rule}")
                 continue
             
             try:
-                # Extract value from source
-                values = self._extract_value(data, source_path)
+                # Extract value from source when provided; otherwise use static/default value.
+                values = self._extract_value(data, source_path) if source_path else None
                 
                 # Handle array iteration
-                if isinstance(values, list) and '[*]' in source_path:
+                if source_path and isinstance(values, list) and '[*]' in source_path:
                     # Array mapping - preserve array structure
                     transformed_values = []
                     for value in values:
@@ -115,7 +155,8 @@ class MappingService:
                         transformed_value = self._apply_transform(values, transform)
                         self._set_value(result, target_path, transformed_value)
                     elif default_value is not None:
-                        self._set_value(result, target_path, default_value)
+                        transformed_default = self._apply_transform(default_value, transform)
+                        self._set_value(result, target_path, transformed_default)
                 
             except Exception as e:
                 logger.warning(f"Failed to apply rule {source_path} -> {target_path}: {str(e)}")
@@ -316,6 +357,7 @@ class MappingService:
         - 'lowercase': Convert string to lowercase
         - 'trim': Remove leading/trailing whitespace
         - 'string': Convert to string
+        - 'result_pairs': Convert an HL7/ASTM observation/result to {fieldName, testResult}
         
         Args:
             value: Value to transform
@@ -336,6 +378,27 @@ class MappingService:
                 return str(value).strip()
             elif transform == 'string':
                 return str(value)
+            elif transform == 'result_pairs':
+                if isinstance(value, dict):
+                    identifier = value.get('identifier')
+                    if not identifier:
+                        test_id = value.get('universal_test_id') or {}
+                        if isinstance(test_id, dict):
+                            identifier = (
+                                test_id.get('display_name')
+                                or test_id.get('mnemonic')
+                                or test_id.get('test_name')
+                                or test_id.get('test_id')
+                                or test_id.get('raw')
+                            )
+                    return {
+                        'fieldName': str(identifier or ''),
+                        'testResult': str(value.get('value') or ''),
+                    }
+                return {
+                    'fieldName': '',
+                    'testResult': str(value),
+                }
             else:
                 logger.warning(f"Unknown transform: {transform}")
                 return value
@@ -360,16 +423,21 @@ class MappingService:
             if not isinstance(rule, dict):
                 return False, f"Rule {i} must be a dictionary"
             
-            if 'source_path' not in rule or not rule['source_path']:
-                return False, f"Rule {i} missing 'source_path'"
-            
-            if 'target_path' not in rule or not rule['target_path']:
+            source_path = rule.get('source_path')
+            target_path = rule.get('target_path')
+            default_value = rule.get('default_value')
+
+            if not target_path:
                 return False, f"Rule {i} missing 'target_path'"
+
+            if not source_path and default_value is None:
+                return False, f"Rule {i} needs either 'source_path' or 'default_value'"
             
             # Validate path syntax
             try:
-                self._parse_path(rule['source_path'])
-                self._parse_path(rule['target_path'])
+                if source_path:
+                    self._parse_path(source_path)
+                self._parse_path(target_path)
             except Exception as e:
                 return False, f"Rule {i} has invalid path syntax: {str(e)}"
         
@@ -391,3 +459,206 @@ class MappingService:
         except Exception as e:
             logger.error(f"Preview mapping failed: {str(e)}")
             raise
+
+    def get_default_json_template(self) -> Dict[str, Any]:
+        """Return the default outbound JSON schema requested by the user."""
+        return {
+            "displayNumber": "string",
+            "testName": "string",
+            "result": [
+                {
+                    "fieldName": "string",
+                    "testResult": "string",
+                }
+            ],
+        }
+
+    def get_default_mapping_config(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Build the default mapping config for the requested outbound layout."""
+        display_source = self._first_existing_path(data, [
+            'patient.id',
+            'patient.practice_patient_id',
+            'patient.lab_patient_id',
+            'orders[0].specimen_id_parsed.accession_number',
+            'orders[0].filler_order_number',
+            'orders[0].placer_order_number',
+            'orders[0].specimen_id',
+        ])
+        test_name_source = self._first_existing_path(data, [
+            'message_profile',
+            'orders[0].universal_service_id',
+            'orders[0].test_profile',
+            'orders[0].universal_test_id.display_name',
+            'orders[0].universal_test_id.raw',
+        ])
+        result_source = self._first_existing_path(data, ['observations[*]', 'results[*]'])
+
+        rules: List[Dict[str, Any]] = [
+            {
+                'source_path': display_source,
+                'target_path': 'displayNumber',
+                'default_value': '',
+            },
+            {
+                'source_path': test_name_source,
+                'target_path': 'testName',
+                'default_value': '',
+            },
+        ]
+
+        if result_source:
+            rules.append({
+                'source_path': result_source,
+                'target_path': 'result',
+                'transform': 'result_pairs',
+                'default_value': [],
+            })
+        else:
+            rules.append({
+                'target_path': 'result',
+                'default_value': [],
+            })
+
+        return rules
+
+    def generate_template_rules(self, data: Dict[str, Any], template: Any) -> List[Dict[str, Any]]:
+        """Generate mapping rules from a pasted JSON template and sample message data."""
+        if isinstance(template, str):
+            try:
+                template = json.loads(template)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f'Invalid JSON template: {exc.msg}') from exc
+
+        if not isinstance(template, (dict, list)):
+            raise ValueError('Template must be a JSON object or array')
+
+        if template == self.get_default_json_template():
+            return self.get_default_mapping_config(data)
+
+        extracted_fields = self._extract_template_fields(template)
+        rules: List[Dict[str, Any]] = []
+        handled_result_arrays = set()
+
+        for field in extracted_fields:
+            target_path = field['path']
+            value = field['value']
+            normalized_target = re.sub(r'\[\d+\]', '[0]', target_path)
+            key_name = normalized_target.split('.')[-1].replace('[0]', '')
+            array_match = re.match(r'^(.*)\[0\]\.(fieldName|testResult)$', normalized_target)
+
+            if key_name in {'fieldName', 'testResult'} and array_match:
+                array_target = array_match.group(1)
+                if array_target not in handled_result_arrays:
+                    handled_result_arrays.add(array_target)
+                    result_source = self._first_existing_path(data, ['observations[*]', 'results[*]'])
+                    rule = {
+                        'target_path': array_target,
+                        'transform': 'result_pairs',
+                        'default_value': [],
+                    }
+                    if result_source:
+                        rule['source_path'] = result_source
+                    rules.append(rule)
+                continue
+
+            source_path = self._suggest_source_path(data, key_name)
+            rule: Dict[str, Any] = {'target_path': normalized_target}
+
+            if source_path:
+                rule['source_path'] = source_path
+
+            default_value = self._coerce_template_value(value)
+            if default_value is not None:
+                rule['default_value'] = default_value
+
+            if 'source_path' in rule or 'default_value' in rule:
+                rules.append(rule)
+
+        return rules or self.get_default_mapping_config(data)
+
+    def _first_existing_path(self, data: Dict[str, Any], candidates: List[str]) -> Optional[str]:
+        """Return the first candidate path that exists in the sample data."""
+        for candidate in candidates:
+            value = self._extract_value(data, candidate)
+            if value not in (None, '', [], {}):
+                return candidate
+        return None
+
+    def _extract_template_fields(self, template: Any, path: str = '') -> List[Dict[str, Any]]:
+        """Flatten a JSON template into leaf paths and values."""
+        fields: List[Dict[str, Any]] = []
+
+        if isinstance(template, dict):
+            for key, value in template.items():
+                next_path = f'{path}.{key}' if path else key
+                fields.extend(self._extract_template_fields(value, next_path))
+        elif isinstance(template, list):
+            if not template:
+                fields.append({'path': path, 'value': []})
+            else:
+                fields.extend(self._extract_template_fields(template[0], f'{path}[0]'))
+        else:
+            fields.append({'path': path, 'value': template})
+
+        return fields
+
+    def _suggest_source_path(self, data: Dict[str, Any], key_name: str) -> Optional[str]:
+        """Suggest a likely source path for a target key based on the selected message."""
+        normalized_key = self._normalize_key(key_name)
+        suggestion_map = {
+            'displaynumber': [
+                'patient.id', 'patient.practice_patient_id', 'patient.lab_patient_id',
+                'orders[0].specimen_id_parsed.accession_number', 'orders[0].filler_order_number',
+                'orders[0].placer_order_number', 'orders[0].specimen_id'
+            ],
+            'testname': [
+                'message_profile', 'orders[0].universal_service_id', 'orders[0].test_profile',
+                'orders[0].universal_test_id.display_name', 'orders[0].universal_test_id.raw'
+            ],
+            'fieldname': ['observations[*]', 'results[*]'],
+            'testresult': ['observations[*]', 'results[*]'],
+            'patientid': ['patient.id', 'patient.practice_patient_id', 'patient.lab_patient_id'],
+            'patientname': ['patient.name.given_name', 'patient.name.first', 'patient.name.family_name', 'patient.name.last'],
+            'instrumentmodel': ['instrument.model'],
+            'instrumentserial': ['instrument.serial'],
+        }
+
+        candidates = suggestion_map.get(normalized_key, [])
+        candidate_match = self._first_existing_path(data, candidates)
+        if candidate_match:
+            return candidate_match
+
+        discovered_paths: List[str] = []
+        self._find_matching_paths(data, normalized_key, '', discovered_paths)
+        return discovered_paths[0] if discovered_paths else None
+
+    def _find_matching_paths(self, data: Any, normalized_key: str, path: str, results: List[str]) -> None:
+        """Recursively search parsed message data for matching field names."""
+        if isinstance(data, dict):
+            for key, value in data.items():
+                next_path = f'{path}.{key}' if path else key
+                if self._normalize_key(key) == normalized_key:
+                    results.append(next_path)
+                self._find_matching_paths(value, normalized_key, next_path, results)
+        elif isinstance(data, list):
+            for index, item in enumerate(data):
+                next_path = f'{path}[{index}]' if path else f'[{index}]'
+                self._find_matching_paths(item, normalized_key, next_path, results)
+
+    def _normalize_key(self, key: str) -> str:
+        """Normalize a key for loose matching across naming styles."""
+        return re.sub(r'[^a-z0-9]', '', str(key).lower())
+
+    def _coerce_template_value(self, value: Any) -> Any:
+        """Convert template placeholders into safe default values for generated rules."""
+        if isinstance(value, str):
+            placeholder = value.strip().lower()
+            if placeholder == 'string':
+                return ''
+            if placeholder == 'number':
+                return 0
+            if placeholder == 'boolean':
+                return False
+            if placeholder in {'null', 'none'}:
+                return None
+        return value

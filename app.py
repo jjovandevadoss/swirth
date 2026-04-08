@@ -18,7 +18,7 @@ from flask import Flask, jsonify, render_template, request
 
 from api_client import APIClient
 from config import Config
-from parsers import ASTMParser, HL7Parser
+from parsers import ASTMParser, GigaParser, HL7Parser
 from routes import create_ingest_blueprint, create_results_blueprint
 from routes.mapping_routes import create_mapping_blueprint
 from services import DeliveryService, IngestService
@@ -461,7 +461,7 @@ def create_app() -> Flask:
     mapping_service = MappingService(mapping_repository)
     
     hl7_parser = HL7Parser()
-    astm_parser = ASTMParser()
+    astm_parser = GigaParser()
 
     api_client = APIClient(
         api_url=app.config['API_URL'],
@@ -486,29 +486,36 @@ def create_app() -> Flask:
         astm_parser=astm_parser,
     )
 
-    # Start MLLP Listener in background thread
-    mllp_host = app.config.get('MLLP_HOST', '0.0.0.0')
-    mllp_port = app.config.get('MLLP_PORT', 6000)
-    mllp_thread = _threading.Thread(
-        target=start_mllp_listener,
-        args=(mllp_host, mllp_port, ingest_service),
-        daemon=True,
-        name="MLLP-Listener"
+    should_start_background_listeners = (
+        not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
     )
-    mllp_thread.start()
-    logger.info(f'MLLP listener thread started on {mllp_host}:{mllp_port}')
 
-    # Start ASTM Listener in background thread
-    astm_host = app.config.get('ASTM_HOST', '0.0.0.0')
-    astm_port = app.config.get('ASTM_PORT', 7000)
-    astm_thread = _threading.Thread(
-        target=start_astm_listener,
-        args=(astm_host, astm_port, ingest_service),
-        daemon=True,
-        name="ASTM-Listener"
-    )
-    astm_thread.start()
-    logger.info(f'ASTM listener thread started on {astm_host}:{astm_port}')
+    if should_start_background_listeners:
+        # Start MLLP Listener in background thread
+        mllp_host = app.config.get('MLLP_HOST', '0.0.0.0')
+        mllp_port = app.config.get('MLLP_PORT', 6000)
+        mllp_thread = _threading.Thread(
+            target=start_mllp_listener,
+            args=(mllp_host, mllp_port, ingest_service),
+            daemon=True,
+            name="MLLP-Listener"
+        )
+        mllp_thread.start()
+        logger.info(f'MLLP listener thread started on {mllp_host}:{mllp_port}')
+
+        # Start ASTM Listener in background thread
+        astm_host = app.config.get('ASTM_HOST', '0.0.0.0')
+        astm_port = app.config.get('ASTM_PORT', 7000)
+        astm_thread = _threading.Thread(
+            target=start_astm_listener,
+            args=(astm_host, astm_port, ingest_service),
+            daemon=True,
+            name="ASTM-Listener"
+        )
+        astm_thread.start()
+        logger.info(f'ASTM listener thread started on {astm_host}:{astm_port}')
+    else:
+        logger.info('Skipping background listener startup in the Flask reloader parent process')
 
     app.extensions['repository'] = repository
     app.extensions['delivery_service'] = delivery_service

@@ -5,7 +5,7 @@ Repository for managing field mapping profiles
 import sqlite3
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -36,12 +36,39 @@ class MappingRepository:
         return conn
     
     def _initialize(self) -> None:
-        """Initialize database schema if not already created"""
+        """Initialize database schema if not already created."""
         with self._get_connection() as conn:
             conn.executescript(SCHEMA_SQL)
+            self._ensure_mapping_profile_columns(conn)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_mapping_profiles_match
+                ON mapping_profiles(is_active, protocol_filter, instrument_model, instrument_serial, test_profile)
+            """)
+            conn.commit()
+
+    def _ensure_mapping_profile_columns(self, conn: sqlite3.Connection) -> None:
+        """Backfill selector columns for older databases."""
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(mapping_profiles)")
+        existing_columns = {
+            row["name"] if isinstance(row, sqlite3.Row) else row[1]
+            for row in cursor.fetchall()
+        }
+
+        required_columns = {
+            "instrument_model": "TEXT",
+            "instrument_serial": "TEXT",
+            "test_profile": "TEXT",
+        }
+
+        for column_name, column_type in required_columns.items():
+            if column_name not in existing_columns:
+                cursor.execute(f"ALTER TABLE mapping_profiles ADD COLUMN {column_name} {column_type}")
     
     def create_profile(self, name: str, description: str = "", 
-                      protocol_filter: str = "ALL", config: List[Dict[str, Any]] = None) -> int:
+                      protocol_filter: str = "ALL", instrument_model: str = None,
+                      instrument_serial: str = None, test_profile: str = None,
+                      config: List[Dict[str, Any]] = None) -> int:
         """
         Create a new mapping profile.
         
@@ -70,14 +97,27 @@ class MappingRepository:
         except (TypeError, ValueError) as e:
             raise ValueError(f"Invalid config format: {str(e)}")
         
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
         
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO mapping_profiles (name, description, protocol_filter, config, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (name.strip(), description, protocol_filter, config_json, now, now))
+                INSERT INTO mapping_profiles (
+                    name, description, protocol_filter, instrument_model,
+                    instrument_serial, test_profile, config, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                name.strip(),
+                description,
+                protocol_filter,
+                instrument_model or None,
+                instrument_serial or None,
+                test_profile or None,
+                config_json,
+                now,
+                now,
+            ))
             conn.commit()
             profile_id = cursor.lastrowid
             
@@ -124,19 +164,69 @@ class MappingRepository:
     
     def get_active_profile(self) -> Optional[Dict[str, Any]]:
         """
-        Get the currently active mapping profile.
+        Get the most recently activated mapping profile.
         
         Returns:
             Active profile dict or None if no active profile
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM mapping_profiles WHERE is_active = 1 LIMIT 1")
+            cursor.execute("SELECT * FROM mapping_profiles WHERE is_active = 1 ORDER BY updated_at DESC, id DESC LIMIT 1")
             row = cursor.fetchone()
             
         if row:
             return self._row_to_dict(row)
         return None
+
+    def get_active_profiles(self) -> List[Dict[str, Any]]:
+        """Return all enabled mapping profiles ordered by recency."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM mapping_profiles WHERE is_active = 1 ORDER BY updated_at DESC, id DESC")
+            rows = cursor.fetchall()
+
+        return [self._row_to_dict(row) for row in rows]
+
+    def get_matching_profile(
+        self,
+        protocol: str = None,
+        instrument_model: str = None,
+        instrument_serial: str = None,
+        test_profile: str = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Return the most specific active profile for the incoming message."""
+        requested_protocol = (protocol or "ALL").upper()
+        best_profile = None
+        best_score = -1
+
+        for profile in self.get_active_profiles():
+            protocol_filter = (profile.get("protocol_filter") or "ALL").upper()
+            if protocol_filter not in {"ALL", requested_protocol}:
+                continue
+
+            selectors = [
+                ("instrument_model", instrument_model, 2),
+                ("instrument_serial", instrument_serial, 3),
+                ("test_profile", test_profile, 2),
+            ]
+
+            score = 1 if protocol_filter != "ALL" else 0
+            matched = True
+
+            for field_name, actual_value, weight in selectors:
+                expected_value = profile.get(field_name)
+                if expected_value in (None, ""):
+                    continue
+                if actual_value is None or str(expected_value).strip().upper() != str(actual_value).strip().upper():
+                    matched = False
+                    break
+                score += weight
+
+            if matched and score > best_score:
+                best_profile = profile
+                best_score = score
+
+        return best_profile
     
     def get_all_profiles(self) -> List[Dict[str, Any]]:
         """
@@ -154,7 +244,8 @@ class MappingRepository:
     
     def update_profile(self, profile_id: int, name: str = None, 
                       description: str = None, protocol_filter: str = None,
-                      config: List[Dict[str, Any]] = None) -> bool:
+                      instrument_model: str = None, instrument_serial: str = None,
+                      test_profile: str = None, config: List[Dict[str, Any]] = None) -> bool:
         """
         Update an existing mapping profile.
         
@@ -189,6 +280,18 @@ class MappingRepository:
         if protocol_filter is not None:
             updates.append("protocol_filter = ?")
             values.append(protocol_filter)
+
+        if instrument_model is not None:
+            updates.append("instrument_model = ?")
+            values.append(instrument_model or None)
+
+        if instrument_serial is not None:
+            updates.append("instrument_serial = ?")
+            values.append(instrument_serial or None)
+
+        if test_profile is not None:
+            updates.append("test_profile = ?")
+            values.append(test_profile or None)
         
         if config is not None:
             try:
@@ -202,7 +305,7 @@ class MappingRepository:
             return True  # Nothing to update
         
         updates.append("updated_at = ?")
-        values.append(datetime.utcnow().isoformat())
+        values.append(datetime.now(UTC).isoformat())
         values.append(profile_id)
         
         with self._get_connection() as conn:
@@ -247,35 +350,41 @@ class MappingRepository:
     
     def set_active_profile(self, profile_id: int) -> bool:
         """
-        Set a profile as active. Deactivates all other profiles.
+        Enable a profile for runtime matching.
         
-        Args:
-            profile_id: ID of profile to activate
-            
-        Returns:
-            True if activated, False if profile not found
+        Multiple profiles may be active at once; the most specific match wins.
         """
-        # Check if profile exists
         profile = self.get_profile(profile_id)
         if not profile:
             return False
         
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            
-            # Deactivate all profiles
-            cursor.execute("UPDATE mapping_profiles SET is_active = 0")
-            
-            # Activate the specified profile
             cursor.execute("""
                 UPDATE mapping_profiles 
                 SET is_active = 1, updated_at = ?
                 WHERE id = ?
-            """, (datetime.utcnow().isoformat(), profile_id))
-            
+            """, (datetime.now(UTC).isoformat(), profile_id))
             conn.commit()
         
         logger.info(f"Activated mapping profile: {profile['name']} (ID: {profile_id})")
+        return True
+
+    def deactivate_profile(self, profile_id: int) -> bool:
+        """Deactivate a specific mapping profile."""
+        profile = self.get_profile(profile_id)
+        if not profile:
+            return False
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE mapping_profiles SET is_active = 0, updated_at = ? WHERE id = ?",
+                (datetime.now(UTC).isoformat(), profile_id),
+            )
+            conn.commit()
+
+        logger.info(f"Deactivated mapping profile: {profile['name']} (ID: {profile_id})")
         return True
     
     def deactivate_all_profiles(self) -> None:
@@ -287,6 +396,106 @@ class MappingRepository:
         
         logger.info("Deactivated all mapping profiles")
     
+    # ------------------------------------------------------------------
+    # Machine assignments
+    # ------------------------------------------------------------------
+
+    def get_unique_instruments(self, limit: int = 200) -> List[Dict[str, Any]]:
+        """Return unique instruments seen in recent messages."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT protocol, source_ip, parsed_data, created_at FROM messages "
+                "WHERE parsed_data IS NOT NULL ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            )
+            rows = cursor.fetchall()
+
+        seen: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            try:
+                data = json.loads(row["parsed_data"])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            instrument = data.get("instrument") or {}
+            model = (instrument.get("model") or "").strip() if isinstance(instrument, dict) else ""
+            serial = (instrument.get("serial") or "").strip() if isinstance(instrument, dict) else ""
+            protocol = (row["protocol"] or "ALL").upper()
+            key = f"{protocol}|{model}|{serial}"
+            if key not in seen:
+                display_name = (
+                    instrument.get("display_name") or model
+                    if isinstance(instrument, dict) else model
+                ) or f"{protocol} device"
+                seen[key] = {
+                    "key": key,
+                    "protocol": protocol,
+                    "instrument_model": model,
+                    "instrument_serial": serial,
+                    "display_name": display_name,
+                    "source_ip": row["source_ip"] or "",
+                    "last_seen": row["created_at"],
+                }
+        return list(seen.values())
+
+    def get_machine_assignment(
+        self,
+        protocol: str,
+        instrument_model: str,
+        instrument_serial: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Return the explicit profile assignment for a machine, or None if none set."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM machine_assignments WHERE protocol=? AND instrument_model=? AND instrument_serial=?",
+                (protocol or "ALL", instrument_model or "", instrument_serial or ""),
+            )
+            row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def set_machine_assignment(
+        self,
+        protocol: str,
+        instrument_model: str,
+        instrument_serial: str,
+        profile_id: Optional[int],
+    ) -> None:
+        """Upsert a machine → profile assignment. profile_id=None means 'use default'."""
+        now = datetime.now(UTC).isoformat()
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT INTO machine_assignments (protocol, instrument_model, instrument_serial, profile_id, updated_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(protocol, instrument_model, instrument_serial)
+                   DO UPDATE SET profile_id=excluded.profile_id, updated_at=excluded.updated_at""",
+                (protocol or "ALL", instrument_model or "", instrument_serial or "", profile_id, now),
+            )
+            conn.commit()
+        logger.info("Set machine assignment %s|%s|%s -> profile_id=%s", protocol, instrument_model, instrument_serial, profile_id)
+
+    def delete_machine_assignment(
+        self,
+        protocol: str,
+        instrument_model: str,
+        instrument_serial: str,
+    ) -> None:
+        """Remove an explicit machine assignment (revert to auto-matching)."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "DELETE FROM machine_assignments WHERE protocol=? AND instrument_model=? AND instrument_serial=?",
+                (protocol or "ALL", instrument_model or "", instrument_serial or ""),
+            )
+            conn.commit()
+
+    def get_all_machine_assignments(self) -> List[Dict[str, Any]]:
+        """Return all machine assignments."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM machine_assignments ORDER BY updated_at DESC")
+            rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
     def _row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
         """
         Convert database row to dictionary with parsed JSON.

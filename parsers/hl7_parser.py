@@ -8,7 +8,7 @@ import hl7apy
 from hl7apy.parser import parse_message
 from hl7apy.exceptions import ParserError, UnsupportedVersion
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -125,8 +125,10 @@ class HL7Parser:
     def _extract_message_data(self, parsed_msg,
                                version: str) -> Dict[str, Any]:
         data: Dict[str, Any] = {
+            'protocol': 'HL7',
+            'parser_name': 'HL7',
             'hl7_version': version,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
         }
 
         try:
@@ -155,6 +157,9 @@ class HL7Parser:
             data['diagnoses'] = self._extract_diagnoses(parsed_msg)
             data['specimens'] = self._extract_specimens(parsed_msg)
             data['notes'] = self._extract_notes(parsed_msg)
+            data['instrument'] = self._extract_instrument_info(data)
+            data['raw_segments'] = self._build_raw_segments(parsed_msg)
+            data['message_profile'] = self._extract_message_profile(data)
 
             # Backwards-compatible convenience key
             if data['orders']:
@@ -182,6 +187,71 @@ class HL7Parser:
     # ------------------------------------------------------------------
     # Segment extraction helpers
     # ------------------------------------------------------------------
+
+    def _extract_instrument_info(self, data: Dict[str, Any]) -> Dict[str, Optional[str]]:
+        """Build a simple instrument identity object for routing and UI selection."""
+        sending_application = data.get('sending_application')
+        sending_facility = data.get('sending_facility')
+        receiving_application = data.get('receiving_application')
+
+        display_name = ' / '.join(
+            part for part in [sending_application, sending_facility] if part
+        ) or 'HL7 Sender'
+
+        return {
+            'model': sending_application,
+            'serial': sending_facility,
+            'firmware': data.get('hl7_version'),
+            'display_name': display_name,
+            'receiving_application': receiving_application,
+        }
+
+    def _extract_message_profile(self, data: Dict[str, Any]) -> Optional[str]:
+        """Use the order service identifier as the mapping profile hint."""
+        orders = data.get('orders') or []
+        for order in orders:
+            value = order.get('universal_service_id') if isinstance(order, dict) else None
+            if value and str(value).strip() not in {'[]', '{}'}:
+                return str(value).strip()
+
+        for segment in data.get('raw_segments') or []:
+            segment_type = segment.get('segment_type') or segment.get('type')
+            if segment_type != 'OBR':
+                continue
+            for field in segment.get('fields') or []:
+                if field.get('position') == 4 and field.get('value'):
+                    return str(field['value']).strip()
+
+        return None
+
+    def _build_raw_segments(self, parsed_msg) -> List[Dict[str, Any]]:
+        """Expose raw HL7 segments and fields for the highlighting UI."""
+        raw_segments: List[Dict[str, Any]] = []
+
+        try:
+            er7_message = parsed_msg.to_er7() if hasattr(parsed_msg, 'to_er7') else str(parsed_msg)
+        except Exception:
+            er7_message = str(parsed_msg)
+
+        segments = [segment.strip() for segment in str(er7_message).split('\r') if segment.strip()]
+
+        for segment_text in segments:
+            field_separator = segment_text[3] if len(segment_text) > 3 else '|'
+            fields = segment_text.split(field_separator)
+            raw_segments.append({
+                'segment_type': fields[0] if fields else 'UNK',
+                'raw': segment_text,
+                'field_separator': field_separator,
+                'fields': [
+                    {
+                        'position': idx,
+                        'value': value,
+                    }
+                    for idx, value in enumerate(fields[1:], start=1)
+                ],
+            })
+
+        return raw_segments
 
     def _extract_patient_info(self,
                                parsed_msg) -> Optional[Dict[str, Any]]:
@@ -602,8 +672,10 @@ class HL7Parser:
         logger.info("Using fallback parser for non-standard HL7 message")
 
         data: Dict[str, Any] = {
+            'protocol': 'HL7',
+            'parser_name': 'HL7',
             'hl7_version': 'UNKNOWN',
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
             'parsing_method': 'fallback',
             'raw_segments': [],
             'observations': [],
@@ -620,8 +692,16 @@ class HL7Parser:
             seg_type = fields[0].upper() if fields else 'UNKNOWN'
 
             data['raw_segments'].append({
+                'segment_type': seg_type,
                 'type': seg_type,
-                'fields': fields[1:],
+                'fields': [
+                    {
+                        'position': idx,
+                        'value': value,
+                    }
+                    for idx, value in enumerate(fields[1:], start=1)
+                ],
+                'raw': segment,
             })
 
             try:
@@ -740,6 +820,9 @@ class HL7Parser:
         # Backwards-compatible convenience key
         if data['orders']:
             data['order'] = data['orders'][0]
+
+        data['instrument'] = self._extract_instrument_info(data)
+        data['message_profile'] = self._extract_message_profile(data)
 
         return data
 

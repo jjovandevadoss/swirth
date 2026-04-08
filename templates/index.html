@@ -79,7 +79,7 @@
             display: flex;
             flex-direction: column;
             gap: 1.5rem;
-            overflow-y: hidden; /* Changed from auto to hidden to let inner containers scroll */
+            overflow-y: auto;
         }
 
         /* Cards */
@@ -131,14 +131,14 @@
         /* Viewer Layout */
         .viewer-container {
             display: flex;
-            flex: 1;
             gap: 1.5rem;
-            min-height: 0; /* Important for nested flex scroll */
-            padding-bottom: 1rem;
+            height: 60vh;
+            min-height: 420px;
         }
 
-        .list-pane { flex: 0 0 350px; display: flex; flex-direction: column; min-height: 0; }
+        .list-pane { flex: 0 0 300px; display: flex; flex-direction: column; min-height: 0; }
         .detail-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+        .config-pane { flex: 0 0 280px; display: flex; flex-direction: column; min-height: 0; }
 
         .message-list {
             flex: 1;
@@ -307,6 +307,45 @@
             border-radius: 4px;
             font-size: 0.9rem;
         }
+
+        /* Machine config pane */
+        .machine-list {
+            flex: 1;
+            overflow-y: auto;
+            background: #fff;
+            border-radius: 0 0 8px 8px;
+        }
+        .machine-row {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .machine-row:last-child { border-bottom: none; }
+        .machine-row-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .machine-name {
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--text-color);
+        }
+        .machine-serial {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .machine-profile-assigned {
+            font-size: 0.78rem;
+            color: var(--primary-color);
+            font-weight: 500;
+        }
+        .machine-profile-default {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+        }
         
         /* Modal */
         .modal-overlay {
@@ -434,13 +473,21 @@
                     <div style="display: flex; gap: 0.5rem;">
                         <button class="tab-btn active" onclick="switchInspectorTab('parsed', this)">Parsed Data</button>
                         <button class="tab-btn" onclick="switchInspectorTab('raw', this)">Raw Message</button>
-                        <button class="tab-btn" id="formatted-tab-btn" onclick="switchInspectorTab('formatted', this)">Formatted Report</button>
                     </div>
                 </div>
                 <div id="json-renderer" class="json-viewer-container active"></div>
                 <div id="raw-renderer" class="raw-message-container"><pre id="raw-message-content">Select a message to view its raw content</pre></div>
-                <div id="formatted-renderer" class="formatted-report-container">
-                    <div id="formatted-content">Select an ASTM message to view formatted report</div>
+            </div>
+        </div>
+
+            <!-- Config Pane -->
+            <div class="card config-pane">
+                <div class="card-header" style="font-size:0.85rem;">
+                    <span><i class="fas fa-microchip"></i> Instrument Profiles</span>
+                    <button class="btn" style="font-size:0.7rem;padding:0.25rem 0.6rem;" onclick="loadMachines()"><i class="fas fa-sync"></i></button>
+                </div>
+                <div class="machine-list" id="machineList">
+                    <div style="padding:1.5rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">Loading...</div>
                 </div>
             </div>
         </div>
@@ -518,7 +565,6 @@ L|1|</textarea>
                     renderStats();
                     $('#json-renderer').empty();
                     $('#raw-message-content').text('Select a message to view its raw content');
-                    $('#formatted-content').html('Select an ASTM message to view formatted report');
                     showToast(`Cleared ${data.deleted} message(s) from the database.`, 'success');
                 },
                 error: function() {
@@ -624,49 +670,17 @@ L|1|</textarea>
             // Update raw message view
             const rawMsg = msg.raw_message || 'No raw message available';
             $('#raw-message-content').text(rawMsg);
-            
-            // Update formatted report view (only for ASTM messages)
-            if (msg.protocol === 'ASTM') {
-                $('#formatted-tab-btn').show();
-                loadFormattedReport(msg.message_uid);
-            } else {
-                $('#formatted-tab-btn').hide();
-                $('#formatted-content').html('<p style="text-align:center; color:var(--text-muted); padding:2rem;">Formatted reports are only available for ASTM messages</p>');
-            }
-        }
-        
-        function loadFormattedReport(messageUid) {
-            $('#formatted-content').html('<div style="text-align:center; padding:2rem;"><i class="fas fa-spinner fa-spin"></i> Loading...</div>');
-            
-            $.get(`/api/messages/${messageUid}/formatted`, function(response) {
-                if (response.status === 'success') {
-                    $('#formatted-content').html(response.html);
-                } else {
-                    $('#formatted-content').html(`<p style="text-align:center; color:var(--danger-color); padding:2rem;">Failed to load report: ${response.message}</p>`);
-                }
-            }).fail(function(xhr) {
-                $('#formatted-content').html(`<p style="text-align:center; color:var(--danger-color); padding:2rem;">Error loading formatted report</p>`);
-            });
         }
         
         function switchInspectorTab(tab, btn) {
-            // Update button states
             $(btn).siblings('.tab-btn').removeClass('active');
             $(btn).addClass('active');
-            
-            // Show appropriate content
             if (tab === 'parsed') {
                 $('#json-renderer').addClass('active').show();
                 $('#raw-renderer').removeClass('active').hide();
-                $('#formatted-renderer').removeClass('active').hide();
             } else if (tab === 'raw') {
                 $('#json-renderer').removeClass('active').hide();
                 $('#raw-renderer').addClass('active').show();
-                $('#formatted-renderer').removeClass('active').hide();
-            } else if (tab === 'formatted') {
-                $('#json-renderer').removeClass('active').hide();
-                $('#raw-renderer').removeClass('active').hide();
-                $('#formatted-renderer').addClass('active').show();
             }
         }
 
@@ -721,9 +735,54 @@ L|1|</textarea>
             });
         }
 
+        // ------------------------------------------------------------------
+        // Machine profile assignment
+        // ------------------------------------------------------------------
+        function loadMachines() {
+            $.get('/api/machines', function(res) {
+                if (!res.success) return;
+                const machines = res.machines;
+
+                const container = $('#machineList');
+                if (!machines.length) {
+                    container.html('<div style="padding:1.5rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">No instruments seen yet</div>');
+                    return;
+                }
+
+                const rows = machines.map(m => {
+                    const subtitle = [m.instrument_serial, m.source_ip].filter(Boolean).join(' · ');
+                    let profileLabel, profileClass;
+                    if (m.assignment_mode === 'profile' && m.profile_name) {
+                        profileLabel = m.profile_name;
+                        profileClass = 'machine-profile-assigned';
+                    } else if (m.assignment_mode === 'default') {
+                        profileLabel = 'Default parser';
+                        profileClass = 'machine-profile-default';
+                    } else {
+                        // 'active' — using globally active profile, or default if none
+                        profileLabel = m.profile_name || 'Default parser';
+                        profileClass = m.profile_name ? 'machine-profile-assigned' : 'machine-profile-default';
+                    }
+                    return `
+                        <div class="machine-row">
+                            <div class="machine-row-top">
+                                <div>
+                                    <span class="proto-tag ${m.protocol}">${m.protocol}</span>
+                                    <span class="machine-name"> ${m.display_name || m.instrument_model || 'Unknown'}</span>
+                                </div>
+                            </div>
+                            ${subtitle ? `<span class="machine-serial">${subtitle}</span>` : ''}
+                            <span class="${profileClass}">${profileLabel}</span>
+                        </div>`;
+                }).join('');
+                container.html(rows);
+            });
+        }
+
         // Init
         fetchData();
         setInterval(fetchData, 2000);
+        loadMachines();
         
         // Modal Overlay Click
         $('#simulatorModal').on('click', function(e) {

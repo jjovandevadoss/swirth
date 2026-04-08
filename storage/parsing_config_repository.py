@@ -5,7 +5,7 @@ Handles CRUD operations for parser configuration profiles.
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Dict, Any, List, Optional
 
 
@@ -34,7 +34,7 @@ class ParsingConfigRepository:
         delimiter_overrides: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Create a new parser configuration profile."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
         
         with self._get_connection() as conn:
             cursor = conn.execute(
@@ -207,7 +207,7 @@ class ParsingConfigRepository:
             return self.get_config(config_id)
 
         updates.append("updated_at = ?")
-        params.append(datetime.utcnow().isoformat())
+        params.append(datetime.now(UTC).isoformat())
         params.append(config_id)
 
         with self._get_connection() as conn:

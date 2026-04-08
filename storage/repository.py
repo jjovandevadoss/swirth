@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -25,7 +25,7 @@ class MessageRepository:
             conn.executescript(SCHEMA_SQL)
 
     def create_message(self, message_uid: str, protocol: str, source_ip: str, raw_message: str, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
         parsed_json = json.dumps(parsed_data)
 
         with self._connect() as conn:
@@ -42,7 +42,7 @@ class MessageRepository:
         return self._row_to_dict(row)
 
     def mark_delivered(self, message_uid: str, api_status: int) -> None:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
             conn.execute(
                 """
@@ -59,7 +59,7 @@ class MessageRepository:
             )
 
     def mark_failed_attempt(self, message_uid: str, error: str) -> None:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
             conn.execute(
                 """

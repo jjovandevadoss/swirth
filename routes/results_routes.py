@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from flask import Blueprint, jsonify
 
@@ -15,7 +15,7 @@ def create_results_blueprint(repository):
             jsonify(
                 {
                     "status": "healthy",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "service": "HL7 Lab Machine Interface",
                 }
             ),

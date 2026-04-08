@@ -64,29 +64,40 @@ class APIClient:
         if self.mapping_service:
             try:
                 transformed = self.mapping_service.apply_mapping(data, protocol)
-                logger.debug(f"Applied custom mapping: {len(transformed)} top-level fields")
-                return transformed
+                if transformed is not data:
+                    logger.debug(f"Applied custom mapping: {len(transformed)} top-level fields")
+                    return transformed
+                logger.debug("No custom mapping matched; using default requested JSON layout")
             except Exception as e:
                 logger.warning(f"Custom mapping failed, falling back to default: {str(e)}")
         
-        # Fallback to original hardcoded transformation for backward compatibility
-        logger.debug("Using default transformation (no active mapping profile)")
-        
-        # Extract displayNumber from patient ID or order number
-        display_number = ""
-        if data.get("patient") and data["patient"].get("id"):
-            display_number = str(data["patient"]["id"])
-        elif data.get("orders") and len(data["orders"]) > 0:
-            order = data["orders"][0]
-            display_number = str(order.get("filler_order_number") or order.get("placer_order_number") or "")
-        
-        # Extract testName from universal service identifier
-        test_name = ""
-        if data.get("orders") and len(data["orders"]) > 0:
-            universal_service = data["orders"][0].get("universal_service_id")
-            if universal_service:
-                test_name = str(universal_service)
-        
+        # Fallback to the default requested JSON layout
+        logger.debug("Using default transformation for outbound JSON")
+
+        patient = data.get("patient") or {}
+        first_order = (data.get("orders") or [{}])[0] if data.get("orders") else {}
+        specimen_id_parsed = first_order.get("specimen_id_parsed") or {} if isinstance(first_order, dict) else {}
+
+        display_candidates = [
+            patient.get("id"),
+            patient.get("practice_patient_id"),
+            patient.get("lab_patient_id"),
+            specimen_id_parsed.get("accession_number") if isinstance(specimen_id_parsed, dict) else None,
+            first_order.get("filler_order_number") if isinstance(first_order, dict) else None,
+            first_order.get("placer_order_number") if isinstance(first_order, dict) else None,
+            first_order.get("specimen_id") if isinstance(first_order, dict) else None,
+        ]
+        display_number = str(next((value for value in display_candidates if value not in (None, "", [], {})), ""))
+
+        test_candidates = [
+            data.get("message_profile"),
+            first_order.get("universal_service_id") if isinstance(first_order, dict) else None,
+            first_order.get("test_profile") if isinstance(first_order, dict) else None,
+            (first_order.get("universal_test_id") or {}).get("display_name") if isinstance(first_order, dict) else None,
+            (first_order.get("universal_test_id") or {}).get("raw") if isinstance(first_order, dict) else None,
+        ]
+        test_name = str(next((value for value in test_candidates if value not in (None, "", [], {})), ""))
+
         # Build result array from observations or results
         result = []
         
@@ -103,8 +114,14 @@ class APIClient:
         # Try ASTM results
         elif data.get("results"):
             for res in data["results"]:
-                test_id = res.get("universal_test_id", {})
-                field_name = str(test_id.get("test_id") or test_id.get("test_name") or "")
+                test_id = res.get("universal_test_id", {}) or {}
+                field_name = str(
+                    test_id.get("display_name")
+                    or test_id.get("mnemonic")
+                    or test_id.get("test_name")
+                    or test_id.get("test_id")
+                    or ""
+                )
                 test_result = str(res.get("value") or "")
                 if field_name or test_result:
                     result.append({

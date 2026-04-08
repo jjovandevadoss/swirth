@@ -250,13 +250,19 @@ class ASTMParser:
                 # The next few characters are component/repeat/escape delimiters
                 if len(record) > 2:
                     delim_field = record[2:].split(field_sep)[0]
-                    # LIS2-A2 order: repeat, component, escape
-                    repeat_sep   = delim_field[0] if len(delim_field) > 0 \
-                        else self._DEFAULT_REPEAT_SEP
-                    component_sep = delim_field[1] if len(delim_field) > 1 \
-                        else self._DEFAULT_COMPONENT_SEP
-                    escape_char  = delim_field[2] if len(delim_field) > 2 \
-                        else self._DEFAULT_ESCAPE
+
+                    # Instruments vary between `^\\&` and `\\^&` ordering.
+                    # Prefer the standard ASTM characters when present so both
+                    # declarations normalize to component=`^`, repeat=`\\`, escape=`&`.
+                    component_sep = '^' if '^' in delim_field else (
+                        delim_field[0] if len(delim_field) > 0 else self._DEFAULT_COMPONENT_SEP
+                    )
+                    repeat_sep = '\\' if '\\' in delim_field else (
+                        delim_field[1] if len(delim_field) > 1 else self._DEFAULT_REPEAT_SEP
+                    )
+                    escape_char = '&' if '&' in delim_field else (
+                        delim_field[2] if len(delim_field) > 2 else self._DEFAULT_ESCAPE
+                    )
                     return field_sep, component_sep, repeat_sep, escape_char
 
         return (self._DEFAULT_FIELD_SEP, self._DEFAULT_COMPONENT_SEP,

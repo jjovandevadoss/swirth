@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Dict
 
 from parsers import ASTMParser, HL7Parser
@@ -25,10 +25,26 @@ class IngestService:
 
     def process_astm(self, raw_message: str, source_ip: str) -> Dict[str, Any]:
         parsed = self.astm_parser.parse(raw_message)
+
+        # Suppress instrument alarm-only packets (C records, no results/orders/patient).
+        # Sysmex analyzers send these as intermediate flag notifications.
+        has_results = bool(parsed.get("results"))
+        has_orders = bool(parsed.get("orders"))
+        has_patient = bool(parsed.get("patient"))
+        if not has_results and not has_orders and not has_patient:
+            uid = f"ASTM-{int(datetime.now(UTC).timestamp() * 1000)}"
+            return {
+                "message_uid": uid,
+                "protocol": "ASTM",
+                "parsed_data": parsed,
+                "delivery": {"status": "skipped", "reason": "alarm-only packet (no results/orders/patient)"},
+                "stored": None,
+            }
+
         return self._process("ASTM", raw_message, parsed, source_ip)
 
     def _process(self, protocol: str, raw_message: str, parsed_data: Dict[str, Any], source_ip: str) -> Dict[str, Any]:
-        uid = f"{protocol}-{int(datetime.utcnow().timestamp() * 1000)}"
+        uid = f"{protocol}-{int(datetime.now(UTC).timestamp() * 1000)}"
         message_entry = self.repository.create_message(
             message_uid=uid,
             protocol=protocol,

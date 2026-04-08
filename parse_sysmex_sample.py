@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Parse a sample Sysmex H550 ASTM LIS2-A2 message using the existing ASTMParser.
+Parse a sample Sysmex H550 ASTM LIS2-A2 message using the dynamic Giga parser.
 """
 
 import json
-from parsers.astm_parser import ASTMParser
+from parsers.giga_parser import GigaParser
 
 SAMPLE_MESSAGE = r"""H|\^&|||H550^211YADH04038^4.0.2.3|||||||P|LIS2-A2|20260402122236
 P|1
@@ -53,20 +53,21 @@ L|1|N"""
 
 
 def main():
-    parser = ASTMParser()
+    parser = GigaParser()
     parsed = parser.parse(SAMPLE_MESSAGE)
 
     # --- Header ---
     header = parsed.get('header', {})
-    sender_parts = (header.get('sender_name') or '').split('^')
-    instrument_model = sender_parts[0] if sender_parts else 'Unknown'
-    instrument_serial = sender_parts[1] if len(sender_parts) > 1 else 'Unknown'
-    firmware = sender_parts[2] if len(sender_parts) > 2 else 'Unknown'
+    instrument = parsed.get('instrument', {})
+    instrument_model = instrument.get('model') or 'Unknown'
+    instrument_serial = instrument.get('serial') or 'Unknown'
+    firmware = instrument.get('firmware') or 'Unknown'
+    message_profile = parsed.get('message_profile') or 'Unknown'
 
     print("=" * 70)
     print(f"  Sysmex {instrument_model}  |  Serial: {instrument_serial}  |  FW: {firmware}")
     print(f"  Protocol: {header.get('version')}  |  Processing: {header.get('processing_id')}")
-    print(f"  Message Time: {header.get('timestamp')}")
+    print(f"  Message Time: {header.get('timestamp')}  |  Profile: {message_profile}")
     print("=" * 70)
 
     # --- Patient / Order ---

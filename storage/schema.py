@@ -26,6 +26,9 @@ CREATE TABLE IF NOT EXISTS mapping_profiles (
     name TEXT NOT NULL UNIQUE,
     description TEXT,
     protocol_filter TEXT,
+    instrument_model TEXT,
+    instrument_serial TEXT,
+    test_profile TEXT,
     is_active INTEGER DEFAULT 0,
     config TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -34,4 +37,17 @@ CREATE TABLE IF NOT EXISTS mapping_profiles (
 
 CREATE INDEX IF NOT EXISTS idx_mapping_profiles_active
 ON mapping_profiles(is_active);
+
+-- Note: the selector index is created by `MappingRepository` after legacy
+-- databases are migrated to include the selector columns.
+
+CREATE TABLE IF NOT EXISTS machine_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    protocol TEXT NOT NULL DEFAULT 'ALL',
+    instrument_model TEXT NOT NULL DEFAULT '',
+    instrument_serial TEXT NOT NULL DEFAULT '',
+    profile_id INTEGER,
+    updated_at TEXT NOT NULL,
+    UNIQUE(protocol, instrument_model, instrument_serial)
+);
 """
