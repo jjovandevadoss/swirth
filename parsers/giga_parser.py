@@ -107,8 +107,11 @@ class GigaParser(ASTMParser):
                             **(
                                 {
                                     "components": [
-                                        c.strip() if c.strip() else None
-                                        for c in value.split(component_sep)
+                                        {
+                                            "position": cidx,
+                                            "value": c.strip() if c.strip() else None,
+                                        }
+                                        for cidx, c in enumerate(value.split(component_sep))
                                     ]
                                 }
                                 if component_sep in value else {}
