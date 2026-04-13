@@ -121,8 +121,69 @@ class MappingService:
             Transformed data dictionary
         """
         result = {}
-        
-        for rule in rules:
+
+        # ── Paired array iteration ────────────────────────────────────────────────
+        # When BOTH source_path AND target_path contain [*] (e.g.
+        #   results[*].universal_test_id.test_id  →  result[*].fieldName
+        #   results[*].value                       →  result[*].testResult
+        # ) the rules are "paired": for each item in the source array we build the
+        # corresponding target sub-object from all rules in the same channel.
+        def _has_star(p):
+            return '[*]' in (p or '')
+
+        paired_rules = [r for r in rules if _has_star(r.get('source_path')) and _has_star(r.get('target_path'))]
+        regular_rules = [r for r in rules if r not in paired_rules]
+
+        if paired_rules:
+            channels: Dict[tuple, list] = {}
+            for rule in paired_rules:
+                src = rule.get('source_path', '')
+                tgt = rule.get('target_path', '')
+                src_star = src.index('[*]')
+                tgt_star = tgt.index('[*]')
+                src_base = src[:src_star].rstrip('.')
+                tgt_base = tgt[:tgt_star].rstrip('.')
+                src_field = src[src_star + 3:].lstrip('.')
+                tgt_field = tgt[tgt_star + 3:].lstrip('.')
+                key = (src_base, tgt_base)
+                channels.setdefault(key, []).append({
+                    'src_field': src_field,
+                    'tgt_field': tgt_field,
+                    'default_value': rule.get('default_value'),
+                    'transform': rule.get('transform'),
+                })
+
+            for (src_base, tgt_base), channel_rules in channels.items():
+                src_array = self._extract_value(data, src_base) if src_base else data
+                if not isinstance(src_array, list):
+                    src_array = []
+
+                for i, src_item in enumerate(src_array):
+                    for cr in channel_rules:
+                        src_field = cr['src_field']
+                        tgt_field = cr['tgt_field']
+                        transform = cr.get('transform')
+                        default_value = cr.get('default_value')
+
+                        tgt_path = f"{tgt_base}[{i}].{tgt_field}" if tgt_field else f"{tgt_base}[{i}]"
+
+                        if src_field and isinstance(src_item, dict):
+                            value = self._extract_value(src_item, src_field)
+                        elif not src_field:
+                            value = src_item
+                        else:
+                            value = None
+
+                        try:
+                            if value is not None:
+                                self._set_value(result, tgt_path, self._apply_transform(value, transform))
+                            elif default_value is not None:
+                                self._set_value(result, tgt_path, self._apply_transform(default_value, transform))
+                        except Exception as e:
+                            logger.warning(f"Paired array rule error {src_base}[*].{src_field} -> {tgt_path}: {e}")
+
+        # ── Regular (non-paired) rules ────────────────────────────────────────────
+        for rule in regular_rules:
             source_path = rule.get('source_path', '')
             target_path = rule.get('target_path', '')
             default_value = rule.get('default_value')
@@ -136,9 +197,8 @@ class MappingService:
                 # Extract value from source when provided; otherwise use static/default value.
                 values = self._extract_value(data, source_path) if source_path else None
                 
-                # Handle array iteration
+                # Handle array iteration (source [*] only — flat list at target)
                 if source_path and isinstance(values, list) and '[*]' in source_path:
-                    # Array mapping - preserve array structure
                     transformed_values = []
                     for value in values:
                         if value is not None:
