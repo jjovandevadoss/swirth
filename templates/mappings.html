@@ -1066,7 +1066,7 @@
             H: { 4: 'header.sender_name', 11: 'header.processing_id', 12: 'header.version', 13: 'header.timestamp' },
             P: { 2: 'patient.practice_patient_id', 3: 'patient.lab_patient_id', 5: 'patient.name', 7: 'patient.date_of_birth', 8: 'patient.sex', 10: 'patient.address', 12: 'patient.telephone' },
             O: { 2: 'orders[*].specimen_id', 3: 'orders[*].instrument_specimen_id', 4: 'orders[*].universal_test_id.raw', 5: 'orders[*].priority', 6: 'orders[*].ordered_datetime', 15: 'orders[*].specimen_descriptor', 25: 'orders[*].report_type' },
-            R: { 2: 'results[*].universal_test_id.raw', 3: 'results[*].value', 4: 'results[*].units', 5: 'results[*].reference_range', 6: 'results[*].abnormal_flags', 8: 'results[*].result_status', 13: 'results[*].instrument_id' },
+            R: { 2: 'results[*].universal_test_id.test_id', 3: 'results[*].value', 4: 'results[*].units', 5: 'results[*].reference_range', 6: 'results[*].abnormal_flags', 8: 'results[*].result_status', 13: 'results[*].instrument_id' },
             C: { 3: 'comments[*].comment_text', 4: 'comments[*].comment_type' },
             M: { 2: 'manufacturer_records[*].definition_scope', 3: 'manufacturer_records[*].definition_name' },
             L: { 2: 'terminator.termination_code' }
@@ -2460,6 +2460,9 @@
                     $('#btnActivate').prop('disabled', true);
                     $('#btnDelete').prop('disabled', true);
                     loadProfiles();
+                    if (selectedMessage) {
+                        previewMapping();
+                    }
                 } else {
                     showToast(response.error || 'Failed to activate profile', 'error');
                 }
