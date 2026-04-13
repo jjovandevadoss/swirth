@@ -1145,6 +1145,7 @@
 
         function renderRawMessageView(lines, protocol) {
             const countsByType = {};
+            const componentSeparator = '^';
             const html = lines.map((line, idx) => {
                 const segmentType = protocol === 'HL7' ? line.slice(0, 3) : line.slice(0, 1);
                 countsByType[segmentType] = (countsByType[segmentType] || 0) + 1;
@@ -1164,16 +1165,37 @@
                     lineHtml += `<span class="raw-separator">${escapeHtml(separator)}</span>`;
 
                     if (suggestedPath) {
-                        lineHtml += `
-                            <button
-                                type="button"
-                                class="raw-field-token clickable-field"
-                                data-path="${suggestedPath}"
-                                title="${escapeHtml(`${segmentType}-${fieldNumber} • ${fieldLabel}`)}"
-                                onclick="useFieldPath('${suggestedPath}', this)">
-                                ${tokenValue}
-                            </button>
-                        `;
+                        if (value.includes(componentSeparator)) {
+                            const componentTokens = value.split(componentSeparator).map((componentValue, componentIndex) => {
+                                const componentPath = `raw_records[${idx}].fields[${rawIndex}].components[${componentIndex}].value`;
+                                const componentTokenValue = componentValue === '' ? '&nbsp;' : escapeHtml(componentValue);
+                                const componentTitle = `${segmentType}-${fieldNumber}.${componentIndex + 1} • Component ${componentIndex + 1}`;
+
+                                return `
+                                    <button
+                                        type="button"
+                                        class="raw-field-token clickable-field"
+                                        data-path="${componentPath}"
+                                        title="${escapeHtml(componentTitle)}"
+                                        onclick="useFieldPath('${componentPath}', this)">
+                                        ${componentTokenValue}
+                                    </button>
+                                `;
+                            }).join(`<span class="raw-separator">${escapeHtml(componentSeparator)}</span>`);
+
+                            lineHtml += componentTokens;
+                        } else {
+                            lineHtml += `
+                                <button
+                                    type="button"
+                                    class="raw-field-token clickable-field"
+                                    data-path="${suggestedPath}"
+                                    title="${escapeHtml(`${segmentType}-${fieldNumber} • ${fieldLabel}`)}"
+                                    onclick="useFieldPath('${suggestedPath}', this)">
+                                    ${tokenValue}
+                                </button>
+                            `;
+                        }
                     } else {
                         lineHtml += `<span class="raw-field-token raw-field-static" title="${escapeHtml(`${segmentType}-${fieldNumber}`)}">${tokenValue}</span>`;
                     }
