@@ -593,6 +593,12 @@
         .rules-table tbody tr:hover {
             background: #f8fafc;
         }
+        .rules-table tbody tr.pending-source-row {
+            background: #fff7ed;
+        }
+        .rules-table tbody tr.pending-source-row:hover {
+            background: #ffedd5;
+        }
 
         .field-input-group {
             display: flex;
@@ -861,11 +867,11 @@
                     <table class="rules-table" id="rulesTable">
                         <thead>
                             <tr>
-                                <th style="width: 28%;">Source Field Path</th>
-                                <th style="width: 30%;">Target JSON Path</th>
-                                <th style="width: 27%;">Static / Default Value</th>
-                                <th style="width: 10%;">Transform</th>
-                                <th style="width: 5%;"></th>
+                                <th style="width: 24%;">Source Field Path</th>
+                                <th style="width: 29%;">Target JSON Path</th>
+                                <th style="width: 24%;">Static / Default Value</th>
+                                <th style="width: 11%;">Transform</th>
+                                <th style="width: 12%;">Order / Actions</th>
                             </tr>
                         </thead>
                         <tbody id="rulesTableBody">
@@ -893,8 +899,14 @@
                         <label for="jsonTemplateInput">Desired JSON Template</label>
                         <textarea id="jsonTemplateInput" spellcheck="false" style="min-height: 180px; font-family: 'Courier New', monospace;" placeholder='Paste the JSON layout you want'></textarea>
                         <div class="button-group" style="margin-top: 0.75rem;">
+                            <button class="btn btn-sm btn-secondary" onclick="formatTemplateJson()">
+                                <i class="fas fa-code"></i> Format JSON
+                            </button>
                             <button class="btn btn-sm btn-secondary" onclick="loadDefaultLayoutRules()">
                                 <i class="fas fa-wand-magic-sparkles"></i> Use Default Layout
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="buildBlankRulesFromTemplate()">
+                                <i class="fas fa-layer-group"></i> Build Blank Hierarchy
                             </button>
                             <button class="btn btn-sm btn-secondary" onclick="buildRulesFromTemplate()">
                                 <i class="fas fa-file-import"></i> Auto-Build From Template
@@ -986,7 +998,10 @@
             loadProfiles();
             loadRecentMessages();
             $('#jsonTemplateInput').val(DEFAULT_JSON_TEMPLATE);
-            $(document).on('input', '.source-path', refreshFieldHighlights);
+            $(document).on('input', '.source-path', function() {
+                updateRulePendingState($(this).closest('tr'));
+                refreshFieldHighlights();
+            });
         });
 
         // Load recent messages from the API
@@ -1323,19 +1338,34 @@
             // Remove leading dot if present
             path = path.replace(/^\./, '');
             
-            // Check if there's an empty rule or create a new one
+            // Prefer pending template rows so highlighted fields fill in order.
             const rows = $('#rulesTableBody tr');
             let targetRow = null;
-            
+
             rows.each(function() {
-                const sourcePathInput = $(this).find('.source-path');
-                if (sourcePathInput.length === 0) return; // skip empty-state / non-rule rows
-                const sourcePath = sourcePathInput.val();
-                if (!sourcePath || sourcePath.trim() === '') {
-                    targetRow = $(this);
-                    return false; // break
+                const row = $(this);
+                const sourcePathInput = row.find('.source-path');
+                if (sourcePathInput.length === 0) return;
+                const sourcePath = sourcePathInput.val().trim();
+                const isPendingTemplateRow = row.attr('data-await-source') === 'true';
+                if (isPendingTemplateRow && !sourcePath) {
+                    targetRow = row;
+                    return false;
                 }
             });
+            
+            // Fallback to any empty source row.
+            if (!targetRow) {
+                rows.each(function() {
+                    const sourcePathInput = $(this).find('.source-path');
+                    if (sourcePathInput.length === 0) return;
+                    const sourcePath = sourcePathInput.val();
+                    if (!sourcePath || sourcePath.trim() === '') {
+                        targetRow = $(this);
+                        return false;
+                    }
+                });
+            }
             
             if (!targetRow) {
                 addMappingRule();
@@ -1343,6 +1373,7 @@
             }
             
             targetRow.find('.source-path').val(path).focus();
+            updateRulePendingState(targetRow);
             
             // Scroll to the mapping rules section
             $('html, body').animate({
@@ -1384,6 +1415,21 @@
             });
         }
 
+        function updateRulePendingState(row) {
+            if (!row || row.length === 0) return;
+
+            const sourcePathInput = row.find('.source-path');
+            const targetPathInput = row.find('.target-path');
+            if (sourcePathInput.length === 0 || targetPathInput.length === 0) return;
+
+            const sourcePath = sourcePathInput.val().trim();
+            const targetPath = targetPathInput.val().trim();
+            const awaitingSource = !!targetPath && !sourcePath;
+
+            row.attr('data-await-source', awaitingSource ? 'true' : 'false');
+            row.toggleClass('pending-source-row', awaitingSource);
+        }
+
         function getSelectedParsedData() {
             if (!selectedMessage) {
                 return null;
@@ -1397,6 +1443,97 @@
         function loadDefaultLayoutRules(showToastMessage = true) {
             $('#jsonTemplateInput').val(DEFAULT_JSON_TEMPLATE);
             return buildRulesFromTemplate(showToastMessage, DEFAULT_JSON_TEMPLATE);
+        }
+
+        function formatTemplateJson() {
+            const rawTemplate = ($('#jsonTemplateInput').val() || '').trim();
+            if (!rawTemplate) {
+                showToast('Paste a JSON template first', 'error');
+                return;
+            }
+
+            try {
+                const parsed = JSON.parse(rawTemplate);
+                $('#jsonTemplateInput').val(JSON.stringify(parsed, null, 2));
+                showToast('Template JSON formatted', 'success');
+            } catch (err) {
+                showToast(`Invalid JSON: ${err.message}`, 'error');
+            }
+        }
+
+        function buildBlankRulesFromTemplate(showToastMessage = true) {
+            const rawTemplate = ($('#jsonTemplateInput').val() || '').trim();
+            if (!rawTemplate) {
+                showToast('Paste a JSON template first', 'error');
+                return;
+            }
+
+            let template;
+            try {
+                template = JSON.parse(rawTemplate);
+            } catch (err) {
+                showToast(`Invalid JSON template: ${err.message}`, 'error');
+                return;
+            }
+
+            const leafRules = extractTemplateLeafRules(template)
+                .map(({ path, value }) => {
+                    const rule = {
+                        source_path: '',
+                        target_path: path,
+                        transform: null,
+                    };
+
+                    const includeDefault = value !== '' && value !== null && value !== undefined;
+                    if (includeDefault) {
+                        rule.default_value = value;
+                    } else {
+                        rule.default_value = '';
+                    }
+
+                    return rule;
+                });
+
+            if (!leafRules.length) {
+                showToast('Template must contain at least one leaf field', 'error');
+                return;
+            }
+
+            loadMappingRules(leafRules);
+            $('#rulesTableBody tr').each(function() {
+                const row = $(this);
+                if (row.find('.source-path').length === 0) return;
+                const isSourceEmpty = !row.find('.source-path').val().trim();
+                row.attr('data-await-source', isSourceEmpty ? 'true' : 'false');
+                row.toggleClass('pending-source-row', isSourceEmpty);
+            });
+
+            if (showToastMessage) {
+                showToast('Blank hierarchy created. Click highlighted source fields to fill rows in order.', 'success');
+            }
+        }
+
+        function extractTemplateLeafRules(template, path = '') {
+            const rules = [];
+
+            if (Array.isArray(template)) {
+                if (template.length === 0) {
+                    rules.push({ path, value: [] });
+                    return rules;
+                }
+                return extractTemplateLeafRules(template[0], `${path}[0]`);
+            }
+
+            if (template && typeof template === 'object') {
+                Object.entries(template).forEach(([key, value]) => {
+                    const nextPath = path ? `${path}.${key}` : key;
+                    rules.push(...extractTemplateLeafRules(value, nextPath));
+                });
+                return rules;
+            }
+
+            rules.push({ path, value: template });
+            return rules;
         }
 
         function buildRulesFromTemplate(showToastMessage = true, templateOverride = null) {
@@ -1538,7 +1675,18 @@
             if (tbody.find('.empty-state').length > 0) {
                 tbody.empty();
             }
+
+            let defaultValueText = '';
+            if (rule.default_value !== undefined && rule.default_value !== null) {
+                if (typeof rule.default_value === 'object') {
+                    defaultValueText = JSON.stringify(rule.default_value);
+                } else {
+                    defaultValueText = String(rule.default_value);
+                }
+            }
             
+            const isAwaitingSource = !!rule.target_path && !(rule.source_path || '').trim();
+
             const row = $(`
                 <tr>
                     <td>
@@ -1550,7 +1698,7 @@
                                placeholder="e.g., payload.patient.id">
                     </td>
                     <td>
-                        <input type="text" class="default-value" value="${rule.default_value || ''}" 
+                        <input type="text" class="default-value" value="${escapeHtml(defaultValueText)}" 
                                placeholder="Optional constant like custom-v1">
                     </td>
                     <td>
@@ -1564,14 +1712,24 @@
                         </select>
                     </td>
                     <td style="text-align: center;">
+                        <button class="btn-icon" onclick="moveRuleRow(this, -1)" title="Move Up">
+                            <i class="fas fa-arrow-up"></i>
+                        </button>
+                        <button class="btn-icon" onclick="moveRuleRow(this, 1)" title="Move Down">
+                            <i class="fas fa-arrow-down"></i>
+                        </button>
                         <button class="btn-icon" onclick="removeRuleRow(this)" title="Remove" style="color: var(--danger-color);">
                             <i class="fas fa-trash"></i>
                         </button>
                     </td>
                 </tr>
             `);
+
+            row.attr('data-await-source', isAwaitingSource ? 'true' : 'false');
+            row.toggleClass('pending-source-row', isAwaitingSource);
             
             tbody.append(row);
+            updateRulePendingState(row);
             refreshFieldHighlights();
         }
 
@@ -1592,6 +1750,29 @@
                     </tr>
                 `);
             }
+            refreshFieldHighlights();
+        }
+
+        function moveRuleRow(btn, direction) {
+            const row = $(btn).closest('tr');
+            const tbody = $('#rulesTableBody');
+
+            if (row.find('.empty-state').length > 0) {
+                return;
+            }
+
+            if (direction < 0) {
+                const previous = row.prev('tr');
+                if (previous.length) {
+                    row.insertBefore(previous);
+                }
+            } else if (direction > 0) {
+                const next = row.next('tr');
+                if (next.length) {
+                    row.insertAfter(next);
+                }
+            }
+
             refreshFieldHighlights();
         }
 
@@ -1658,15 +1839,18 @@
                 const targetPath = row.find('.target-path').val().trim();
                 const defaultValue = row.find('.default-value').val().trim();
                 const transform = row.find('.transform').val();
+                const awaitingSource = row.attr('data-await-source') === 'true';
                 
-                if (targetPath && (sourcePath || defaultValue)) {
+                if (targetPath && (sourcePath || defaultValue || awaitingSource)) {
                     rules.push({
                         source_path: sourcePath || null,
                         target_path: targetPath,
-                        default_value: defaultValue || null,
+                        default_value: defaultValue || (awaitingSource ? '' : null),
                         transform: transform || null
                     });
                 }
+
+                updateRulePendingState(row);
             });
             return rules;
         }
