@@ -18,7 +18,7 @@ from flask import Flask, jsonify, render_template, request
 
 from api_client import APIClient
 from config import Config
-from parsers import ASTMParser, GigaParser, HL7Parser
+from parsers import ASTMParser, HL7Parser
 from routes import create_ingest_blueprint, create_results_blueprint
 from routes.mapping_routes import create_mapping_blueprint
 from services import DeliveryService, IngestService
@@ -461,7 +461,7 @@ def create_app() -> Flask:
     mapping_service = MappingService(mapping_repository)
     
     hl7_parser = HL7Parser()
-    astm_parser = GigaParser()
+    astm_parser = ASTMParser()
 
     api_client = APIClient(
         api_url=app.config['API_URL'],
