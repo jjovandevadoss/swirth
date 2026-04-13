@@ -50,4 +50,16 @@ CREATE TABLE IF NOT EXISTS machine_assignments (
     updated_at TEXT NOT NULL,
     UNIQUE(protocol, instrument_model, instrument_serial)
 );
+
+CREATE TABLE IF NOT EXISTS mapping_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    template_json TEXT NOT NULL,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_mapping_templates_name
+ON mapping_templates(name);
 """

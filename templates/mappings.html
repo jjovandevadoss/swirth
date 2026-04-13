@@ -600,6 +600,40 @@
             background: #ffedd5;
         }
 
+        .target-path-wrap {
+            position: relative;
+            transition: margin-left 0.15s;
+        }
+
+        .target-path-wrap::before {
+            content: '';
+            position: absolute;
+            left: -10px;
+            top: 50%;
+            width: 8px;
+            border-top: 1px solid #cbd5e1;
+            opacity: 0;
+            transform: translateY(-50%);
+        }
+
+        .rules-table tbody tr[data-indent-level]:not([data-indent-level='0']) .target-path-wrap::before {
+            opacity: 1;
+        }
+
+        .indent-level-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 30px;
+            padding: 0.2rem 0.35rem;
+            border-radius: 999px;
+            background: #e2e8f0;
+            color: #475569;
+            font-size: 0.72rem;
+            font-weight: 700;
+            margin-right: 0.35rem;
+        }
+
         .field-input-group {
             display: flex;
             gap: 0.5rem;
@@ -645,6 +679,36 @@
             gap: 0.75rem;
             align-items: center;
             margin-bottom: 1rem;
+        }
+
+        .template-toolbar {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .template-toolbar select {
+            flex: 1;
+            min-width: 180px;
+            padding: 0.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+
+        .template-toolbar .btn {
+            margin-top: 0;
+        }
+
+        .resolved-target-path {
+            margin-top: 0.35rem;
+            font-size: 0.72rem;
+            color: #64748b;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .preview-controls select {
             flex: 1;
@@ -871,7 +935,7 @@
                                 <th style="width: 29%;">Target JSON Path</th>
                                 <th style="width: 24%;">Static / Default Value</th>
                                 <th style="width: 11%;">Transform</th>
-                                <th style="width: 12%;">Order / Actions</th>
+                                <th style="width: 12%;">Hierarchy / Actions</th>
                             </tr>
                         </thead>
                         <tbody id="rulesTableBody">
@@ -897,6 +961,15 @@
                 <div class="card-body">
                     <div class="form-group">
                         <label for="jsonTemplateInput">Desired JSON Template</label>
+                        <div class="template-toolbar">
+                            <select id="templatePresetSelect" onchange="onTemplatePresetChange()"></select>
+                            <button class="btn btn-sm btn-secondary" onclick="saveTemplateAsCustom()">
+                                <i class="fas fa-plus"></i> Add Template
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="deleteSelectedTemplate()" id="btnDeleteTemplate" disabled>
+                                <i class="fas fa-trash"></i> Delete Template
+                            </button>
+                        </div>
                         <textarea id="jsonTemplateInput" spellcheck="false" style="min-height: 180px; font-family: 'Courier New', monospace;" placeholder='Paste the JSON layout you want'></textarea>
                         <div class="button-group" style="margin-top: 0.75rem;">
                             <button class="btn btn-sm btn-secondary" onclick="formatTemplateJson()">
@@ -942,6 +1015,8 @@
         let currentProfileId = null;
         let selectedMessage = null;
         let recentMessages = [];
+        const DEFAULT_TEMPLATE_KEY = '__default__';
+        let templateLibrary = [];
         const DEFAULT_JSON_TEMPLATE = JSON.stringify({
             displayNumber: "string",
             testName: "string",
@@ -998,9 +1073,13 @@
             loadProfiles();
             loadRecentMessages();
             $('#jsonTemplateInput').val(DEFAULT_JSON_TEMPLATE);
+            loadTemplateLibraryFromServer(DEFAULT_TEMPLATE_KEY);
             $(document).on('input', '.source-path', function() {
                 updateRulePendingState($(this).closest('tr'));
                 refreshFieldHighlights();
+            });
+            $(document).on('input', '.target-path', function() {
+                refreshResolvedPathHints();
             });
         });
 
@@ -1078,7 +1157,7 @@
             switchView('raw');
 
             if (!currentProfileId && collectMappingRules().length === 0) {
-                loadDefaultLayoutRules(false);
+                buildRulesFromTemplate(false);
             }
         }
 
@@ -1441,8 +1520,192 @@
         }
 
         function loadDefaultLayoutRules(showToastMessage = true) {
-            $('#jsonTemplateInput').val(DEFAULT_JSON_TEMPLATE);
-            return buildRulesFromTemplate(showToastMessage, DEFAULT_JSON_TEMPLATE);
+            const defaultTemplate = getDefaultTemplateRecord();
+            const templateText = defaultTemplate ? defaultTemplate.template_json : DEFAULT_JSON_TEMPLATE;
+
+            $('#jsonTemplateInput').val(templateText);
+            $('#templatePresetSelect').val(defaultTemplate ? getTemplateOptionKey(defaultTemplate) : DEFAULT_TEMPLATE_KEY);
+            syncTemplateDeleteButtonState();
+            return buildRulesFromTemplate(showToastMessage, templateText);
+        }
+
+        function getTemplateOptionKey(template) {
+            if (!template) {
+                return DEFAULT_TEMPLATE_KEY;
+            }
+            return template.is_default ? DEFAULT_TEMPLATE_KEY : `template_${template.id}`;
+        }
+
+        function getTemplateByOptionKey(optionKey) {
+            if (optionKey === DEFAULT_TEMPLATE_KEY) {
+                return getDefaultTemplateRecord();
+            }
+
+            const id = Number(String(optionKey || '').replace('template_', ''));
+            if (!Number.isFinite(id)) {
+                return null;
+            }
+
+            return templateLibrary.find((item) => item.id === id) || null;
+        }
+
+        function getDefaultTemplateRecord() {
+            return templateLibrary.find((item) => item.is_default) || null;
+        }
+
+        function loadTemplateLibraryFromServer(selectedOptionKey = null, suppressErrorToast = false) {
+            return $.get('/api/mappings/templates').done(function(response) {
+                if (!response.success) {
+                    templateLibrary = [];
+                    renderTemplatePresetOptions(DEFAULT_TEMPLATE_KEY);
+                    if (!suppressErrorToast) {
+                        showToast(response.error || 'Failed to load templates', 'error');
+                    }
+                    return;
+                }
+
+                templateLibrary = Array.isArray(response.templates) ? response.templates : [];
+                renderTemplatePresetOptions(selectedOptionKey);
+
+                if (selectedOptionKey) {
+                    const selectedTemplate = getTemplateByOptionKey(selectedOptionKey);
+                    if (selectedTemplate?.template_json) {
+                        $('#jsonTemplateInput').val(selectedTemplate.template_json);
+                    }
+                }
+            }).fail(function(xhr) {
+                templateLibrary = [];
+                renderTemplatePresetOptions(DEFAULT_TEMPLATE_KEY);
+                if (!suppressErrorToast) {
+                    const error = xhr.responseJSON?.error || 'Failed to load templates';
+                    showToast(error, 'error');
+                }
+            });
+        }
+
+        function renderTemplatePresetOptions(preferredOptionKey = null) {
+            const select = $('#templatePresetSelect');
+            const current = preferredOptionKey || select.val() || DEFAULT_TEMPLATE_KEY;
+
+            select.empty();
+            const defaultTemplate = getDefaultTemplateRecord();
+            const defaultLabel = defaultTemplate?.name || 'Default Template';
+            select.append($('<option>').val(DEFAULT_TEMPLATE_KEY).text(defaultLabel));
+
+            const customTemplates = templateLibrary
+                .filter((item) => !item.is_default)
+                .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+            customTemplates.forEach((item) => {
+                select.append($('<option>').val(getTemplateOptionKey(item)).text(item.name));
+            });
+
+            const chosenTemplate = getTemplateByOptionKey(current);
+            if (chosenTemplate) {
+                select.val(getTemplateOptionKey(chosenTemplate));
+            } else {
+                select.val(DEFAULT_TEMPLATE_KEY);
+            }
+
+            syncTemplateDeleteButtonState();
+        }
+
+        function syncTemplateDeleteButtonState() {
+            const selectedTemplate = getTemplateByOptionKey($('#templatePresetSelect').val() || DEFAULT_TEMPLATE_KEY);
+            $('#btnDeleteTemplate').prop('disabled', !selectedTemplate || !!selectedTemplate.is_default);
+        }
+
+        function onTemplatePresetChange() {
+            const selectedTemplate = getTemplateByOptionKey($('#templatePresetSelect').val() || DEFAULT_TEMPLATE_KEY);
+            const templateText = selectedTemplate?.template_json;
+
+            if (!templateText) {
+                showToast('Template not found', 'error');
+                return;
+            }
+
+            $('#jsonTemplateInput').val(templateText);
+            syncTemplateDeleteButtonState();
+            showToast(`Loaded template: ${selectedTemplate.name}`, 'success');
+        }
+
+        function saveTemplateAsCustom() {
+            const templateRaw = ($('#jsonTemplateInput').val() || '').trim();
+            if (!templateRaw) {
+                showToast('Paste or edit a JSON template first', 'error');
+                return;
+            }
+
+            let parsed;
+            try {
+                parsed = JSON.parse(templateRaw);
+            } catch (err) {
+                showToast(`Invalid JSON template: ${err.message}`, 'error');
+                return;
+            }
+
+            const defaultName = `Template ${new Date().toLocaleDateString()}`;
+            const nameInput = window.prompt('Template name', defaultName);
+            if (!nameInput) {
+                return;
+            }
+
+            const name = nameInput.trim();
+            if (!name) {
+                showToast('Template name is required', 'error');
+                return;
+            }
+
+            $.ajax({
+                url: '/api/mappings/templates',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    name: name,
+                    template: JSON.stringify(parsed)
+                })
+            }).done(function(response) {
+                if (!response.success) {
+                    showToast(response.error || 'Failed to save template', 'error');
+                    return;
+                }
+
+                const desiredKey = `template_${response.template_id}`;
+                loadTemplateLibraryFromServer(desiredKey, true);
+                showToast(`Template saved: ${name}`, 'success');
+            }).fail(function(xhr) {
+                const error = xhr.responseJSON?.error || 'Failed to save template';
+                showToast(error, 'error');
+            });
+        }
+
+        function deleteSelectedTemplate() {
+            const selectedTemplate = getTemplateByOptionKey($('#templatePresetSelect').val() || DEFAULT_TEMPLATE_KEY);
+            if (!selectedTemplate || selectedTemplate.is_default) {
+                return;
+            }
+
+            if (!window.confirm(`Delete template "${selectedTemplate.name}"?`)) {
+                return;
+            }
+
+            $.ajax({
+                url: `/api/mappings/templates/${selectedTemplate.id}`,
+                method: 'DELETE'
+            }).done(function(response) {
+                if (!response.success) {
+                    showToast(response.error || 'Failed to delete template', 'error');
+                    return;
+                }
+
+                const defaultTemplate = getDefaultTemplateRecord();
+                $('#jsonTemplateInput').val(defaultTemplate?.template_json || DEFAULT_JSON_TEMPLATE);
+                loadTemplateLibraryFromServer(DEFAULT_TEMPLATE_KEY, true);
+                showToast('Template deleted', 'success');
+            }).fail(function(xhr) {
+                const error = xhr.responseJSON?.error || 'Failed to delete template';
+                showToast(error, 'error');
+            });
         }
 
         function formatTemplateJson() {
@@ -1658,8 +1921,18 @@
                 return;
             }
             
+            const previousResolved = [];
             rules.forEach((rule) => {
-                addRuleRow(rule);
+                const explicitIndent = Number.isInteger(rule.indent_level) ? rule.indent_level : null;
+                const inferredIndent = inferIndentLevel(rule.target_path || '', previousResolved);
+                addRuleRow({
+                    ...rule,
+                    indent_level: explicitIndent !== null ? explicitIndent : inferredIndent
+                });
+                previousResolved.push({
+                    path: rule.target_path || '',
+                    level: explicitIndent !== null ? explicitIndent : inferredIndent
+                });
             });
             refreshFieldHighlights();
         }
@@ -1686,6 +1959,7 @@
             }
             
             const isAwaitingSource = !!rule.target_path && !(rule.source_path || '').trim();
+            const indentLevel = Number.isInteger(rule.indent_level) ? Math.max(0, rule.indent_level) : 0;
 
             const row = $(`
                 <tr>
@@ -1694,8 +1968,11 @@
                                placeholder="e.g., patient.id or observations[*].value">
                     </td>
                     <td>
-                        <input type="text" class="target-path" value="${rule.target_path || ''}" 
-                               placeholder="e.g., payload.patient.id">
+                        <div class="target-path-wrap">
+                            <input type="text" class="target-path" value="${rule.target_path || ''}" 
+                                   placeholder="e.g., patient.id or child key with indent">
+                        </div>
+                        <div class="resolved-target-path"></div>
                     </td>
                     <td>
                         <input type="text" class="default-value" value="${escapeHtml(defaultValueText)}" 
@@ -1712,11 +1989,12 @@
                         </select>
                     </td>
                     <td style="text-align: center;">
-                        <button class="btn-icon" onclick="moveRuleRow(this, -1)" title="Move Up">
-                            <i class="fas fa-arrow-up"></i>
+                        <span class="indent-level-badge">L${indentLevel}</span>
+                        <button class="btn-icon" onclick="changeRuleIndent(this, -1)" title="Outdent (Promote Parent)">
+                            <i class="fas fa-outdent"></i>
                         </button>
-                        <button class="btn-icon" onclick="moveRuleRow(this, 1)" title="Move Down">
-                            <i class="fas fa-arrow-down"></i>
+                        <button class="btn-icon" onclick="changeRuleIndent(this, 1)" title="Indent (Make Child)">
+                            <i class="fas fa-indent"></i>
                         </button>
                         <button class="btn-icon" onclick="removeRuleRow(this)" title="Remove" style="color: var(--danger-color);">
                             <i class="fas fa-trash"></i>
@@ -1725,11 +2003,14 @@
                 </tr>
             `);
 
+            row.attr('data-indent-level', indentLevel);
             row.attr('data-await-source', isAwaitingSource ? 'true' : 'false');
             row.toggleClass('pending-source-row', isAwaitingSource);
             
             tbody.append(row);
+            applyRowIndentation(row);
             updateRulePendingState(row);
+            refreshResolvedPathHints();
             refreshFieldHighlights();
         }
 
@@ -1750,30 +2031,158 @@
                     </tr>
                 `);
             }
+            refreshResolvedPathHints();
             refreshFieldHighlights();
         }
 
-        function moveRuleRow(btn, direction) {
+        function changeRuleIndent(btn, direction) {
             const row = $(btn).closest('tr');
-            const tbody = $('#rulesTableBody');
-
             if (row.find('.empty-state').length > 0) {
                 return;
             }
 
-            if (direction < 0) {
-                const previous = row.prev('tr');
-                if (previous.length) {
-                    row.insertBefore(previous);
+            const currentIndent = getRowIndentLevel(row);
+            let nextIndent = currentIndent + (direction > 0 ? 1 : -1);
+            if (nextIndent < 0) {
+                nextIndent = 0;
+            }
+
+            const previousRow = row.prev('tr');
+            if (previousRow.length && previousRow.find('.empty-state').length === 0) {
+                const previousIndent = getRowIndentLevel(previousRow);
+                const maxAllowedIndent = previousIndent + 1;
+                if (nextIndent > maxAllowedIndent) {
+                    nextIndent = maxAllowedIndent;
                 }
-            } else if (direction > 0) {
-                const next = row.next('tr');
-                if (next.length) {
-                    row.insertAfter(next);
+            } else {
+                nextIndent = 0;
+            }
+
+            row.attr('data-indent-level', nextIndent);
+            applyRowIndentation(row);
+
+            refreshResolvedPathHints();
+            refreshFieldHighlights();
+        }
+
+        function getRowIndentLevel(row) {
+            return Math.max(0, parseInt(row.attr('data-indent-level') || '0', 10) || 0);
+        }
+
+        function applyRowIndentation(row) {
+            const indentLevel = getRowIndentLevel(row);
+            row.attr('data-indent-level', indentLevel);
+            row.find('.target-path-wrap').css('margin-left', `${indentLevel * 18}px`);
+            row.find('.indent-level-badge').text(`L${indentLevel}`);
+        }
+
+        function inferIndentLevel(targetPath, previousResolved) {
+            if (!targetPath || !previousResolved.length) {
+                return 0;
+            }
+
+            for (let i = previousResolved.length - 1; i >= 0; i -= 1) {
+                const candidate = previousResolved[i];
+                if (!candidate.path) {
+                    continue;
+                }
+
+                if (targetPath.startsWith(`${candidate.path}.`) || targetPath.startsWith(`${candidate.path}[`)) {
+                    return (candidate.level || 0) + 1;
                 }
             }
 
-            refreshFieldHighlights();
+            return 0;
+        }
+
+        function isRelativeTargetPath(targetPath) {
+            if (!targetPath) {
+                return false;
+            }
+
+            if (targetPath.startsWith('[')) {
+                return true;
+            }
+
+            return !targetPath.includes('.');
+        }
+
+        function joinTargetPaths(parentPath, childPath) {
+            if (!parentPath) {
+                return childPath;
+            }
+
+            if (childPath.startsWith('[')) {
+                return `${parentPath}${childPath}`;
+            }
+
+            return `${parentPath}.${childPath}`;
+        }
+
+        function collectRuleRowsWithResolvedTargets() {
+            const rows = [];
+            const resolvedStack = [];
+
+            $('#rulesTableBody tr').each(function() {
+                const row = $(this);
+                if (row.find('.empty-state').length > 0) return;
+
+                const sourcePath = row.find('.source-path').val().trim();
+                const targetPath = row.find('.target-path').val().trim();
+                const defaultValue = row.find('.default-value').val().trim();
+                const transform = row.find('.transform').val();
+                const awaitingSource = row.attr('data-await-source') === 'true';
+                const indentLevel = getRowIndentLevel(row);
+
+                let resolvedTargetPath = targetPath;
+                if (targetPath && indentLevel > 0 && isRelativeTargetPath(targetPath)) {
+                    let parentLevel = indentLevel - 1;
+                    while (parentLevel >= 0 && !resolvedStack[parentLevel]) {
+                        parentLevel -= 1;
+                    }
+                    if (parentLevel >= 0 && resolvedStack[parentLevel]) {
+                        resolvedTargetPath = joinTargetPaths(resolvedStack[parentLevel], targetPath);
+                    }
+                }
+
+                resolvedStack[indentLevel] = resolvedTargetPath;
+                resolvedStack.length = indentLevel + 1;
+
+                rows.push({
+                    row,
+                    sourcePath,
+                    targetPath,
+                    resolvedTargetPath,
+                    defaultValue,
+                    transform,
+                    awaitingSource,
+                    indentLevel
+                });
+            });
+
+            return rows;
+        }
+
+        function refreshResolvedPathHints() {
+            collectRuleRowsWithResolvedTargets().forEach((item) => {
+                const hintEl = item.row.find('.resolved-target-path');
+                if (!hintEl.length) {
+                    return;
+                }
+
+                if (!item.targetPath) {
+                    hintEl.text('');
+                    return;
+                }
+
+                if (item.resolvedTargetPath !== item.targetPath) {
+                    hintEl.text(`Resolved: ${item.resolvedTargetPath}`);
+                } else if (item.indentLevel > 0) {
+                    hintEl.text(`Resolved: ${item.targetPath}`);
+                } else {
+                    hintEl.text('');
+                }
+            });
         }
 
         // Save profile
@@ -1831,26 +2240,18 @@
         // Collect mapping rules from table
         function collectMappingRules() {
             const rules = [];
-            $('#rulesTableBody tr').each(function() {
-                const row = $(this);
-                if (row.find('.empty-state').length > 0) return;
-                
-                const sourcePath = row.find('.source-path').val().trim();
-                const targetPath = row.find('.target-path').val().trim();
-                const defaultValue = row.find('.default-value').val().trim();
-                const transform = row.find('.transform').val();
-                const awaitingSource = row.attr('data-await-source') === 'true';
-                
-                if (targetPath && (sourcePath || defaultValue || awaitingSource)) {
+            collectRuleRowsWithResolvedTargets().forEach((item) => {
+                if (item.resolvedTargetPath && (item.sourcePath || item.defaultValue || item.awaitingSource)) {
                     rules.push({
-                        source_path: sourcePath || null,
-                        target_path: targetPath,
-                        default_value: defaultValue || (awaitingSource ? '' : null),
-                        transform: transform || null
+                        source_path: item.sourcePath || null,
+                        target_path: item.resolvedTargetPath,
+                        default_value: item.defaultValue || (item.awaitingSource ? '' : null),
+                        transform: item.transform || null,
+                        indent_level: item.indentLevel
                     });
                 }
 
-                updateRulePendingState(row);
+                updateRulePendingState(item.row);
             });
             return rules;
         }
@@ -1860,9 +2261,13 @@
             clearForm();
             currentProfileId = null;
             $('#profileSelect').val('');
-            $('#jsonTemplateInput').val(DEFAULT_JSON_TEMPLATE);
+            if (!$('#jsonTemplateInput').val().trim()) {
+                $('#jsonTemplateInput').val(DEFAULT_JSON_TEMPLATE);
+                $('#templatePresetSelect').val(DEFAULT_TEMPLATE_KEY);
+                syncTemplateDeleteButtonState();
+            }
             if (selectedMessage) {
-                loadDefaultLayoutRules(false);
+                buildRulesFromTemplate(false);
             }
             showToast('Create a new mapping profile', 'info');
         }
@@ -1947,6 +2352,7 @@
                     </td>
                 </tr>
             `);
+            refreshResolvedPathHints();
             refreshFieldHighlights();
         }
 

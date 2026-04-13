@@ -362,6 +362,87 @@ def create_mapping_blueprint(mapping_service):
                 'error': str(e)
             }), 500
 
+    @bp.route('/api/mappings/templates', methods=['GET'])
+    def list_templates():
+        """Return all stored JSON templates (default + custom)."""
+        try:
+            templates = mapping_service.mapping_repository.get_all_templates()
+            return jsonify({
+                'success': True,
+                'templates': templates
+            }), 200
+        except Exception as e:
+            logger.error(f"Failed to list templates: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+
+    @bp.route('/api/mappings/templates', methods=['POST'])
+    def create_template():
+        """Create a custom JSON template."""
+        try:
+            data = request.get_json() or {}
+            name = (data.get('name') or '').strip()
+            template = data.get('template')
+
+            if not name:
+                return jsonify({'success': False, 'error': 'Template name is required'}), 400
+            if template in (None, ''):
+                return jsonify({'success': False, 'error': 'Template JSON is required'}), 400
+
+            template_id = mapping_service.mapping_repository.create_template(name=name, template_json=template)
+            return jsonify({
+                'success': True,
+                'template_id': template_id
+            }), 201
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+        except Exception as e:
+            logger.error(f"Failed to create template: {str(e)}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @bp.route('/api/mappings/templates/<int:template_id>', methods=['PUT'])
+    def update_template(template_id):
+        """Update custom template JSON and optional name."""
+        try:
+            data = request.get_json() or {}
+            template = data.get('template')
+            name = data.get('name')
+
+            if template in (None, ''):
+                return jsonify({'success': False, 'error': 'Template JSON is required'}), 400
+
+            updated = mapping_service.mapping_repository.update_template(
+                template_id=template_id,
+                template_json=template,
+                name=name,
+            )
+            if not updated:
+                return jsonify({'success': False, 'error': 'Template not found'}), 404
+
+            return jsonify({'success': True}), 200
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+        except Exception as e:
+            logger.error(f"Failed to update template {template_id}: {str(e)}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @bp.route('/api/mappings/templates/<int:template_id>', methods=['DELETE'])
+    def delete_template(template_id):
+        """Delete a custom template."""
+        try:
+            deleted = mapping_service.mapping_repository.delete_template(template_id)
+            if not deleted:
+                return jsonify({'success': False, 'error': 'Template not found'}), 404
+
+            return jsonify({'success': True}), 200
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+        except Exception as e:
+            logger.error(f"Failed to delete template {template_id}: {str(e)}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     @bp.route('/api/mappings/sample/<protocol>', methods=['GET'])
     def get_sample_data(protocol):
         """Get sample parsed data structure for HL7 or ASTM"""

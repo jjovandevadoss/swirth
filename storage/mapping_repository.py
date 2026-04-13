@@ -12,6 +12,19 @@ logger = logging.getLogger(__name__)
 from .schema import SCHEMA_SQL
 
 
+DEFAULT_MAPPING_TEMPLATE_NAME = "Default Template"
+DEFAULT_MAPPING_TEMPLATE_JSON = json.dumps({
+    "displayNumber": "string",
+    "testName": "string",
+    "result": [
+        {
+            "fieldName": "string",
+            "testResult": "string",
+        }
+    ],
+}, indent=2)
+
+
 class MappingRepository:
     """
     Repository for storing and retrieving field mapping configurations.
@@ -44,7 +57,24 @@ class MappingRepository:
                 CREATE INDEX IF NOT EXISTS idx_mapping_profiles_match
                 ON mapping_profiles(is_active, protocol_filter, instrument_model, instrument_serial, test_profile)
             """)
+            self._ensure_default_template(conn)
             conn.commit()
+
+    def _ensure_default_template(self, conn: sqlite3.Connection) -> None:
+        """Ensure one immutable default template exists server-side."""
+        now = datetime.now(UTC).isoformat()
+        conn.execute(
+            """
+            INSERT INTO mapping_templates (name, template_json, is_default, created_at, updated_at)
+            VALUES (?, ?, 1, ?, ?)
+            ON CONFLICT(name)
+            DO UPDATE SET
+                template_json = excluded.template_json,
+                is_default = 1,
+                updated_at = excluded.updated_at
+            """,
+            (DEFAULT_MAPPING_TEMPLATE_NAME, DEFAULT_MAPPING_TEMPLATE_JSON, now, now),
+        )
 
     def _ensure_mapping_profile_columns(self, conn: sqlite3.Connection) -> None:
         """Backfill selector columns for older databases."""
@@ -495,6 +525,121 @@ class MappingRepository:
             cursor.execute("SELECT * FROM machine_assignments ORDER BY updated_at DESC")
             rows = cursor.fetchall()
         return [dict(row) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Mapping templates
+    # ------------------------------------------------------------------
+
+    def get_all_templates(self) -> List[Dict[str, Any]]:
+        """Return all mapping templates with default first."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM mapping_templates
+                ORDER BY is_default DESC, name COLLATE NOCASE ASC
+                """
+            )
+            rows = cursor.fetchall()
+
+        templates: List[Dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["is_default"] = bool(item.get("is_default"))
+            templates.append(item)
+        return templates
+
+    def create_template(self, name: str, template_json: str) -> int:
+        """Create a custom mapping template."""
+        if not name or not name.strip():
+            raise ValueError("Template name is required")
+
+        try:
+            parsed = json.loads(template_json)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Template JSON is invalid: {exc}") from exc
+
+        normalized = json.dumps(parsed, indent=2)
+        now = datetime.now(UTC).isoformat()
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO mapping_templates (name, template_json, is_default, created_at, updated_at)
+                    VALUES (?, ?, 0, ?, ?)
+                    """,
+                    (name.strip(), normalized, now, now),
+                )
+                conn.commit()
+                return cursor.lastrowid
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("Template name already exists") from exc
+
+    def update_template(self, template_id: int, template_json: str, name: Optional[str] = None) -> bool:
+        """Update a custom template by id."""
+        existing = self.get_template(template_id)
+        if not existing:
+            return False
+        if existing.get("is_default"):
+            raise ValueError("Default template cannot be edited")
+
+        try:
+            parsed = json.loads(template_json)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Template JSON is invalid: {exc}") from exc
+
+        normalized = json.dumps(parsed, indent=2)
+        next_name = name.strip() if isinstance(name, str) else existing["name"]
+        if not next_name:
+            raise ValueError("Template name is required")
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """
+                    UPDATE mapping_templates
+                    SET name = ?, template_json = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (next_name, normalized, datetime.now(UTC).isoformat(), template_id),
+                )
+                conn.commit()
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("Template name already exists") from exc
+
+        return True
+
+    def get_template(self, template_id: int) -> Optional[Dict[str, Any]]:
+        """Get template by id."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM mapping_templates WHERE id = ?", (template_id,))
+            row = cursor.fetchone()
+
+        if not row:
+            return None
+
+        template = dict(row)
+        template["is_default"] = bool(template.get("is_default"))
+        return template
+
+    def delete_template(self, template_id: int) -> bool:
+        """Delete template by id (except default)."""
+        existing = self.get_template(template_id)
+        if not existing:
+            return False
+        if existing.get("is_default"):
+            raise ValueError("Default template cannot be deleted")
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM mapping_templates WHERE id = ?", (template_id,))
+            conn.commit()
+
+        return True
 
     def _row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
         """
