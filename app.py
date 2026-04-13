@@ -255,6 +255,7 @@ class ASTMHandler(socketserver.BaseRequestHandler):
     # ASTM Protocol Constants
     STX = b'\x02'  # Start of Text
     ETX = b'\x03'  # End of Text
+    ETB = b'\x17'  # End of Transmission Block (non-final frame)
     EOT = b'\x04'  # End of Transmission
     ENQ = b'\x05'  # Enquiry
     ACK = b'\x06'  # Acknowledge
@@ -278,10 +279,20 @@ class ASTMHandler(socketserver.BaseRequestHandler):
         total_bytes = 0
         frame_count = 0
         prompted = False
+        send_enq_on_connect = str(os.getenv('ASTM_SERVER_INITIATES_ENQ', 'true')).strip().lower() in {'1', 'true', 'yes', 'on'}
         
         try:
             buffer = b''
             messages = []
+
+            if send_enq_on_connect:
+                try:
+                    self.request.sendall(self.ENQ)
+                    prompted = True
+                    logger.info(f"[ASTM] → Sent initial ENQ to {client_ip} to prompt transmission")
+                except (BrokenPipeError, ConnectionResetError):
+                    logger.warning(f"[ASTM] Instrument {client_ip} disconnected before initial ENQ")
+                    return
 
             # ---- initial recv with a short timeout ----
             # If the instrument sends nothing within INITIAL_WAIT seconds we
@@ -307,16 +318,17 @@ class ASTMHandler(socketserver.BaseRequestHandler):
                 buffer += chunk
             except socket.timeout:
                 # Instrument didn't send anything — try prompting it
-                logger.info(
-                    f"[ASTM] No data from {client_ip} within {self.INITIAL_WAIT}s, "
-                    f"sending ENQ to prompt instrument"
-                )
-                try:
-                    self.request.sendall(self.ENQ)
-                    prompted = True
-                except (BrokenPipeError, ConnectionResetError):
-                    logger.warning(f"[ASTM] Instrument {client_ip} already disconnected before ENQ")
-                    return
+                if not prompted:
+                    logger.info(
+                        f"[ASTM] No data from {client_ip} within {self.INITIAL_WAIT}s, "
+                        f"sending ENQ to prompt instrument"
+                    )
+                    try:
+                        self.request.sendall(self.ENQ)
+                        prompted = True
+                    except (BrokenPipeError, ConnectionResetError):
+                        logger.warning(f"[ASTM] Instrument {client_ip} already disconnected before ENQ")
+                        return
 
             # Switch to blocking mode (no timeout) for the rest
             self.request.settimeout(None)
@@ -361,13 +373,18 @@ class ASTMHandler(socketserver.BaseRequestHandler):
                 
                 # ---- STX … ETX frames ----
                 processed_frame = False
-                while self.STX in buffer and self.ETX in buffer:
+                while self.STX in buffer and (self.ETX in buffer or self.ETB in buffer):
                     stx_pos = buffer.find(self.STX)
                     etx_pos = buffer.find(self.ETX, stx_pos)
+                    etb_pos = buffer.find(self.ETB, stx_pos)
+                    candidates = [pos for pos in (etx_pos, etb_pos) if pos != -1]
+                    if not candidates:
+                        break
+                    term_pos = min(candidates)
                     
-                    if stx_pos != -1 and etx_pos != -1:
-                        frame_data = buffer[stx_pos + 1:etx_pos]
-                        checksum_end = etx_pos + 3
+                    if stx_pos != -1 and term_pos != -1:
+                        frame_data = buffer[stx_pos + 1:term_pos]
+                        checksum_end = term_pos + 3
                         
                         if len(buffer) > checksum_end:
                             frame_count += 1
@@ -387,9 +404,11 @@ class ASTMHandler(socketserver.BaseRequestHandler):
                         break
 
                 # If nothing was processed from buffer, clear it so we
-                # block on recv() for more data next iteration
+                # block on recv() for more data next iteration.
+                # Keep partial ASTM frames (STX seen, no terminator yet).
                 if not processed_frame and self.ENQ not in buffer and self.EOT not in buffer:
-                    buffer = b''
+                    if self.STX not in buffer:
+                        buffer = b''
                         
         except ConnectionResetError:
             logger.warning(
@@ -514,8 +533,17 @@ def create_app() -> Flask:
         )
         astm_thread.start()
         logger.info(f'ASTM listener thread started on {astm_host}:{astm_port}')
+
+        app.extensions['listener_threads'] = {
+            'mllp': mllp_thread,
+            'astm': astm_thread,
+        }
     else:
         logger.info('Skipping background listener startup in the Flask reloader parent process')
+        app.extensions['listener_threads'] = {
+            'mllp': None,
+            'astm': None,
+        }
 
     app.extensions['repository'] = repository
     app.extensions['delivery_service'] = delivery_service
@@ -677,21 +705,19 @@ def create_app() -> Flask:
 
     @app.route('/api/listener-status', methods=['GET'])
     def listener_status():
-        def _check(port):
-            try:
-                with socket.create_connection(('127.0.0.1', int(port)), timeout=0.5):
-                    return True
-            except OSError:
-                return False
+        threads = app.extensions.get('listener_threads', {})
+        mllp_thread = threads.get('mllp')
+        astm_thread = threads.get('astm')
+
         return jsonify({
             'http': {'port': app.config.get('PORT', 5001), 'listening': True},
             'mllp': {
                 'port': app.config.get('MLLP_PORT', 6000),
-                'listening': _check(app.config.get('MLLP_PORT', 6000)),
+                'listening': bool(mllp_thread and mllp_thread.is_alive()),
             },
             'astm': {
                 'port': app.config.get('ASTM_PORT', 7000),
-                'listening': _check(app.config.get('ASTM_PORT', 7000)),
+                'listening': bool(astm_thread and astm_thread.is_alive()),
             },
         })
 
