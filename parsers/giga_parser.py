@@ -20,8 +20,16 @@ class GigaParser(ASTMParser):
     """Instrument-aware parser for Giga-style ASTM messages."""
 
     def parse(self, astm_message: str) -> Dict[str, Any]:
+        logger.debug(
+            "[GigaParser] Starting parse  input_len=%d chars",
+            len(astm_message),
+        )
+
         parsed = super().parse(astm_message)
         if not isinstance(parsed, dict):
+            logger.error(
+                "[GigaParser] Base parser returned unexpected type: %s", type(parsed)
+            )
             return {
                 "protocol": "ASTM",
                 "parser_name": "GIGA",
@@ -32,11 +40,22 @@ class GigaParser(ASTMParser):
         parsed["parser_name"] = "GIGA"
 
         if parsed.get("error"):
+            logger.warning(
+                "[GigaParser] Base parser reported an error: %s", parsed["error"]
+            )
             return parsed
 
         instrument = self._extract_instrument_metadata(parsed.get("header") or {})
         if instrument:
             parsed["instrument"] = instrument
+            logger.debug(
+                "[GigaParser] Instrument identified: model=%s  serial=%s  firmware=%s",
+                instrument.get("model"),
+                instrument.get("serial"),
+                instrument.get("firmware"),
+            )
+        else:
+            logger.debug("[GigaParser] No instrument metadata found in H record")
 
         profiles: List[str] = []
         for order in parsed.get("orders", []):
@@ -47,14 +66,31 @@ class GigaParser(ASTMParser):
 
         if profiles:
             parsed["message_profile"] = profiles[0]
+            logger.debug(
+                "[GigaParser] Test profiles found: %s", profiles
+            )
+        else:
+            logger.debug("[GigaParser] No test profile extracted from orders")
 
-        parsed["raw_records"] = self._build_raw_records(astm_message)
+        raw_records = self._build_raw_records(astm_message)
+        parsed["raw_records"] = raw_records
         parsed["routing_hints"] = {
             "protocol": parsed.get("protocol", "ASTM"),
             "instrument_model": instrument.get("model") if instrument else None,
             "instrument_serial": instrument.get("serial") if instrument else None,
             "test_profile": parsed.get("message_profile"),
         }
+
+        logger.info(
+            "[GigaParser] Parse complete  instrument=%s  orders=%d  results=%d  "
+            "raw_records=%d  profile=%s",
+            (instrument or {}).get("display_name") or "unknown",
+            len(parsed.get("orders") or []),
+            len(parsed.get("results") or []),
+            len(raw_records),
+            parsed.get("message_profile") or "none",
+        )
+
         return parsed
 
     def _extract_instrument_metadata(self, header: Dict[str, Any]) -> Optional[Dict[str, Any]]:

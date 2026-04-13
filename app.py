@@ -18,7 +18,7 @@ from flask import Flask, jsonify, render_template, request
 
 from api_client import APIClient
 from config import Config
-from parsers import ASTMParser, HL7Parser
+from parsers import ASTMParser, GigaParser, HL7Parser
 from routes import create_ingest_blueprint, create_results_blueprint
 from routes.mapping_routes import create_mapping_blueprint
 from services import DeliveryService, IngestService
@@ -254,7 +254,8 @@ class ASTMHandler(socketserver.BaseRequestHandler):
     
     # ASTM Protocol Constants
     STX = b'\x02'  # Start of Text
-    ETX = b'\x03'  # End of Text
+    ETX = b'\x03'  # End of Text (last frame in a record)
+    ETB = b'\x17'  # End of Transmission Block (intermediate frame, more data coming)
     EOT = b'\x04'  # End of Transmission
     ENQ = b'\x05'  # Enquiry
     ACK = b'\x06'  # Acknowledge
@@ -322,9 +323,15 @@ class ASTMHandler(socketserver.BaseRequestHandler):
             self.request.settimeout(None)
             
             while True:
-                # If we already have data in buffer from the initial read,
-                # process it before blocking on recv again.
-                if not buffer:
+                # Receive more data when:
+                #  a) buffer is empty, OR
+                #  b) we have a partial frame (STX present but no terminator yet)
+                has_partial_frame = (
+                    self.STX in buffer
+                    and self.ETX not in buffer
+                    and self.ETB not in buffer
+                )
+                if not buffer or has_partial_frame:
                     chunk = self.request.recv(4096)
                     if not chunk:
                         elapsed = time.time() - start_time
@@ -347,7 +354,7 @@ class ASTMHandler(socketserver.BaseRequestHandler):
                     logger.info(f"[ASTM] → Sent ACK to {client_ip}")
                     buffer = buffer.replace(self.ENQ, b'', 1)
                     continue
-                
+
                 # ---- EOT ----
                 if self.EOT in buffer:
                     logger.info(f"[ASTM] ← Received EOT from {client_ip} — {len(messages)} frames complete")
@@ -358,37 +365,57 @@ class ASTMHandler(socketserver.BaseRequestHandler):
                     messages = []
                     buffer = buffer.replace(self.EOT, b'', 1)
                     continue
-                
-                # ---- STX … ETX frames ----
+
+                # ---- STX … ETX/ETB frames ----
+                # ETX = final frame of a record; ETB = intermediate frame (more coming)
                 processed_frame = False
-                while self.STX in buffer and self.ETX in buffer:
+                while self.STX in buffer and (self.ETX in buffer or self.ETB in buffer):
                     stx_pos = buffer.find(self.STX)
                     etx_pos = buffer.find(self.ETX, stx_pos)
-                    
-                    if stx_pos != -1 and etx_pos != -1:
-                        frame_data = buffer[stx_pos + 1:etx_pos]
-                        checksum_end = etx_pos + 3
-                        
-                        if len(buffer) > checksum_end:
+                    etb_pos = buffer.find(self.ETB, stx_pos)
+
+                    # Use whichever terminator comes first
+                    if etx_pos == -1:
+                        term_pos, is_etb = etb_pos, True
+                    elif etb_pos == -1:
+                        term_pos, is_etb = etx_pos, False
+                    else:
+                        is_etb = etb_pos < etx_pos
+                        term_pos = etb_pos if is_etb else etx_pos
+
+                    if stx_pos != -1 and term_pos != -1:
+                        frame_data = buffer[stx_pos + 1:term_pos]
+                        # After terminator: 2-byte checksum + CR + LF = 4 bytes
+                        checksum_end = term_pos + 3  # points at CR
+
+                        if len(buffer) >= checksum_end + 1:
                             frame_count += 1
-                            
+
                             if len(frame_data) > 0:
                                 frame_num = frame_data[0:1]
                                 data = frame_data[1:].decode('utf-8', errors='ignore')
                                 messages.append(data)
-                                logger.info(f"[ASTM] ← Frame {frame_num.decode('utf-8','ignore')}: {len(data)} bytes")
-                            
+                                term_label = 'ETB' if is_etb else 'ETX'
+                                logger.info(
+                                    f"[ASTM] ← Frame {frame_num.decode('utf-8','ignore')} "
+                                    f"({term_label}): {len(data)} bytes"
+                                )
+
                             self.request.sendall(self.ACK)
                             buffer = buffer[checksum_end + 2:]
                             processed_frame = True
                         else:
-                            break
+                            break  # wait for rest of checksum/terminators
                     else:
                         break
 
-                # If nothing was processed from buffer, clear it so we
-                # block on recv() for more data next iteration
-                if not processed_frame and self.ENQ not in buffer and self.EOT not in buffer:
+                # Only clear unrecognised garbage — never discard a partial frame
+                if (
+                    not processed_frame
+                    and self.ENQ not in buffer
+                    and self.EOT not in buffer
+                    and self.STX not in buffer
+                ):
                     buffer = b''
                         
         except ConnectionResetError:
@@ -461,7 +488,7 @@ def create_app() -> Flask:
     mapping_service = MappingService(mapping_repository)
     
     hl7_parser = HL7Parser()
-    astm_parser = ASTMParser()
+    astm_parser = GigaParser()
 
     api_client = APIClient(
         api_url=app.config['API_URL'],

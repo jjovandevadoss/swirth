@@ -65,14 +65,22 @@ class APIClient:
             try:
                 transformed = self.mapping_service.apply_mapping(data, protocol)
                 if transformed is not data:
-                    logger.debug(f"Applied custom mapping: {len(transformed)} top-level fields")
+                    logger.info(
+                        "[APIClient] Custom mapping applied  protocol=%s  top_level_keys=%d",
+                        protocol,
+                        len(transformed),
+                    )
                     return transformed
-                logger.debug("No custom mapping matched; using default requested JSON layout")
+                logger.debug("[APIClient] No custom mapping matched; using default layout  protocol=%s", protocol)
             except Exception as e:
-                logger.warning(f"Custom mapping failed, falling back to default: {str(e)}")
+                logger.warning(
+                    "[APIClient] Custom mapping raised an exception — falling back to default  protocol=%s  error=%s",
+                    protocol,
+                    e,
+                )
         
         # Fallback to the default requested JSON layout
-        logger.debug("Using default transformation for outbound JSON")
+        logger.debug("[APIClient] Using default transformation for outbound JSON  protocol=%s", protocol)
 
         patient = data.get("patient") or {}
         first_order = (data.get("orders") or [{}])[0] if data.get("orders") else {}
@@ -135,7 +143,13 @@ class APIClient:
             "result": result
         }
         
-        logger.debug(f"Transformed data: displayNumber={display_number}, testName={test_name}, results={len(result)}")
+        logger.info(
+            "[APIClient] Default transform complete  protocol=%s  displayNumber=%s  testName=%s  results=%d",
+            protocol,
+            display_number or "(empty)",
+            test_name or "(empty)",
+            len(result),
+        )
         return transformed
     
     def send_data(self, data: Dict[str, Any], retry_count: int = 3) -> requests.Response:
@@ -166,9 +180,9 @@ class APIClient:
         # Convert data to JSON
         try:
             json_data = json.dumps(transformed_data, indent=2)
-            logger.debug(f"Prepared JSON data: {len(json_data)} bytes")
+            logger.debug("[APIClient] Serialised outbound payload  bytes=%d", len(json_data))
         except Exception as e:
-            logger.error(f"Failed to serialize data to JSON: {str(e)}")
+            logger.error("[APIClient] JSON serialisation failed: %s", e, exc_info=True)
             raise Exception(f"JSON serialization error: {str(e)}")
         
         # Attempt to send data with retries
@@ -176,7 +190,13 @@ class APIClient:
         
         for attempt in range(retry_count):
             try:
-                logger.info(f"Sending data to API (attempt {attempt + 1}/{retry_count})")
+                logger.info(
+                    "[APIClient] POST %s  attempt=%d/%d  payload_bytes=%d",
+                    self.api_url,
+                    attempt + 1,
+                    retry_count,
+                    len(json_data),
+                )
                 
                 response = self.session.post(
                     self.api_url,
@@ -186,46 +206,81 @@ class APIClient:
                 
                 # Check if request was successful
                 if response.status_code in [200, 201, 202]:
-                    logger.info(f"Successfully sent data to API: {response.status_code}")
+                    logger.info(
+                        "[APIClient] Delivery accepted  http=%d  url=%s",
+                        response.status_code,
+                        self.api_url,
+                    )
                     return response
                 elif response.status_code in [400, 401, 403, 404]:
                     # Client errors - don't retry
-                    logger.error(f"API client error {response.status_code}: {response.text}")
+                    logger.error(
+                        "[APIClient] Client error  http=%d  body=%s",
+                        response.status_code,
+                        response.text[:500],
+                    )
                     raise Exception(f"API client error {response.status_code}: {response.text}")
                 elif response.status_code >= 500:
                     # Server errors - retry
-                    logger.warning(f"API server error {response.status_code}, will retry")
+                    logger.warning(
+                        "[APIClient] Server error  http=%d  attempt=%d/%d  body=%s",
+                        response.status_code,
+                        attempt + 1,
+                        retry_count,
+                        response.text[:200],
+                    )
                     last_exception = Exception(f"API server error {response.status_code}: {response.text}")
                 else:
-                    # Other status codes
-                    logger.warning(f"Unexpected API response {response.status_code}: {response.text}")
+                    logger.warning(
+                        "[APIClient] Unexpected status  http=%d  body=%s",
+                        response.status_code,
+                        response.text[:200],
+                    )
                     return response
                 
             except requests.exceptions.Timeout:
-                logger.warning(f"Request timeout on attempt {attempt + 1}")
+                logger.warning(
+                    "[APIClient] Request timed out  attempt=%d/%d  timeout=%ds  url=%s",
+                    attempt + 1, retry_count, self.timeout, self.api_url,
+                )
                 last_exception = Exception(f"Request timeout after {self.timeout} seconds")
             
             except requests.exceptions.ConnectionError as e:
-                logger.warning(f"Connection error on attempt {attempt + 1}: {str(e)}")
+                logger.warning(
+                    "[APIClient] Connection error  attempt=%d/%d  url=%s  error=%s",
+                    attempt + 1, retry_count, self.api_url, e,
+                )
                 last_exception = Exception(f"Connection error: {str(e)}")
             
             except requests.exceptions.RequestException as e:
-                logger.error(f"Request exception on attempt {attempt + 1}: {str(e)}")
+                logger.error(
+                    "[APIClient] Request exception  attempt=%d/%d  error=%s",
+                    attempt + 1, retry_count, e,
+                    exc_info=True,
+                )
                 last_exception = Exception(f"Request error: {str(e)}")
             
             except Exception as e:
-                logger.error(f"Unexpected error on attempt {attempt + 1}: {str(e)}")
+                logger.error(
+                    "[APIClient] Unexpected error  attempt=%d/%d  error=%s",
+                    attempt + 1, retry_count, e,
+                    exc_info=True,
+                )
                 last_exception = Exception(f"Unexpected error: {str(e)}")
             
             # Wait before retry (exponential backoff)
             if attempt < retry_count - 1:
                 import time
                 wait_time = 2 ** attempt  # 1, 2, 4 seconds
-                logger.info(f"Waiting {wait_time} seconds before retry")
+                logger.info("[APIClient] Waiting %ds before retry", wait_time)
                 time.sleep(wait_time)
         
         # All retries failed
-        logger.error(f"Failed to send data after {retry_count} attempts")
+        logger.error(
+            "[APIClient] All %d attempt(s) failed  url=%s",
+            retry_count,
+            self.api_url,
+        )
         raise last_exception if last_exception else Exception("Failed to send data to API")
     
     def send_batch_data(self, data_list: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
