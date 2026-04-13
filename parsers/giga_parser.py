@@ -104,6 +104,15 @@ class GigaParser(ASTMParser):
                         {
                             "position": idx,
                             "value": value,
+                            **(
+                                {
+                                    "components": [
+                                        c.strip() if c.strip() else None
+                                        for c in value.split(component_sep)
+                                    ]
+                                }
+                                if component_sep in value else {}
+                            ),
                         }
                         for idx, value in enumerate(fields[1:], start=1)
                     ],
