@@ -172,6 +172,52 @@
         .status-badge.failed { background: #fee2e2; color: #b91c1c; }
         .status-badge.pending { background: #fef3c7; color: #b45309; }
 
+        /* Listener toggle row */
+        .listener-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            padding: 0.3rem 0;
+        }
+        .listener-label {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-color);
+            min-width: 90px;
+        }
+        .listener-label .port-tag {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+        .listener-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #cbd5e1;
+            flex-shrink: 0;
+        }
+        .listener-dot.running { background: var(--success-color); }
+        .listener-dot.stopped { background: var(--danger-color); }
+        .toggle-btn {
+            font-size: 0.72rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            border: 1px solid currentColor;
+            cursor: pointer;
+            font-weight: 600;
+            background: transparent;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .toggle-btn.start  { color: var(--success-color); }
+        .toggle-btn.stop   { color: var(--danger-color); }
+        .toggle-btn:disabled { opacity: 0.45; cursor: default; }
+
         .proto-tag {
             font-size: 0.7rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: #e2e8f0; color: #475569;
         }
@@ -442,11 +488,35 @@
                 <h3 id="stat-failed">-</h3>
             </div>
             <div class="stat-box highlight">
-                <span>Systems</span>
-                <div style="margin-top:0.5rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
-                    <span class="status-badge delivered" title="HTTP Listener"><i class="fas fa-globe"></i> {{ http_port }}</span>
-                    <span class="status-badge delivered" title="MLLP Listener"><i class="fas fa-server"></i> {{ mllp_port }}</span>
-                    <span class="status-badge delivered" title="ASTM Listener"><i class="fas fa-flask"></i> 7000</span>
+                <span>Listeners</span>
+                <div style="margin-top:0.6rem; display:flex; flex-direction:column; gap:0.4rem;">
+                    <!-- HTTP (always on) -->
+                    <div class="listener-row">
+                        <span class="listener-label">
+                            <span class="listener-dot running"></span>
+                            <i class="fas fa-globe" style="color:var(--primary-color)"></i>
+                            HTTP <span class="port-tag">:{{ http_port }}</span>
+                        </span>
+                        <span style="font-size:0.72rem;color:var(--success-color);font-weight:600;">Active</span>
+                    </div>
+                    <!-- MLLP toggle -->
+                    <div class="listener-row" id="mllp-row">
+                        <span class="listener-label">
+                            <span class="listener-dot" id="mllp-dot"></span>
+                            <i class="fas fa-server" style="color:var(--primary-color)"></i>
+                            MLLP <span class="port-tag" id="mllp-port-tag">:{{ mllp_port }}</span>
+                        </span>
+                        <button class="toggle-btn" id="mllp-btn" onclick="toggleListener('mllp')" disabled>…</button>
+                    </div>
+                    <!-- ASTM toggle -->
+                    <div class="listener-row" id="astm-row">
+                        <span class="listener-label">
+                            <span class="listener-dot" id="astm-dot"></span>
+                            <i class="fas fa-flask" style="color:var(--primary-color)"></i>
+                            ASTM <span class="port-tag" id="astm-port-tag">:7000</span>
+                        </span>
+                        <button class="toggle-btn" id="astm-btn" onclick="toggleListener('astm')" disabled>…</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -784,7 +854,72 @@ L|1|</textarea>
         fetchData();
         setInterval(fetchData, 2000);
         loadMachines();
-        
+        pollListenerStatus();
+        setInterval(pollListenerStatus, 5000);
+
+        // -------------------------------------------------------
+        // Listener toggle
+        // -------------------------------------------------------
+        function pollListenerStatus() {
+            $.getJSON('/api/listener-status', function(data) {
+                applyListenerStatus('mllp', data.mllp);
+                applyListenerStatus('astm', data.astm);
+            }).fail(function() {
+                // silently ignore if API unreachable
+            });
+        }
+
+        function applyListenerStatus(name, info) {
+            if (!info) return;
+            const running = !!info.running;
+            const dot = $('#' + name + '-dot');
+            const btn = $('#' + name + '-btn');
+            const portTag = $('#' + name + '-port-tag');
+
+            dot.removeClass('running stopped').addClass(running ? 'running' : 'stopped');
+            if (info.port) portTag.text(':' + info.port);
+
+            btn.prop('disabled', false);
+            if (running) {
+                btn.removeClass('start').addClass('stop').text('Stop');
+            } else {
+                btn.removeClass('stop').addClass('start').text('Start');
+            }
+        }
+
+        function toggleListener(name) {
+            const btn = $('#' + name + '-btn');
+            const isRunning = btn.hasClass('stop');
+            const action = isRunning ? 'stop' : 'start';
+
+            btn.prop('disabled', true).text('…');
+
+            $.ajax({
+                url: '/api/listener/' + name + '/' + action,
+                method: 'POST',
+            }).done(function(resp) {
+                if (!resp.success && action === 'start') {
+                    showToast('Failed to ' + action + ' ' + name.toUpperCase() + ': ' + (resp.error || 'unknown error'), 'error');
+                }
+                // always refresh real status from server
+                pollListenerStatus();
+            }).fail(function(xhr) {
+                const err = (xhr.responseJSON || {}).error || 'Request failed';
+                showToast('Error: ' + err, 'error');
+                pollListenerStatus();
+            });
+        }
+
+        function showToast(msg, type) {
+            const area = document.getElementById('notification-area');
+            if (!area) return;
+            const toast = document.createElement('div');
+            toast.className = 'toast ' + (type || 'info');
+            toast.textContent = msg;
+            area.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
+
         // Modal Overlay Click
         $('#simulatorModal').on('click', function(e) {
              if(e.target === this) closeModal();

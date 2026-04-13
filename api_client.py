@@ -124,10 +124,10 @@ class APIClient:
             for res in data["results"]:
                 test_id = res.get("universal_test_id", {}) or {}
                 field_name = str(
-                    test_id.get("display_name")
+                    test_id.get("test_id")
                     or test_id.get("mnemonic")
+                    or test_id.get("display_name")
                     or test_id.get("test_name")
-                    or test_id.get("test_id")
                     or ""
                 )
                 test_result = str(res.get("value") or "")

@@ -451,7 +451,130 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 
 # ---------------------------------------------------------------------------
-# Listener Startup Functions
+# Listener Manager — start/stop TCP listeners at runtime
+# ---------------------------------------------------------------------------
+class ListenerManager:
+    """
+    Manages MLLP and ASTM TCP listeners.
+    Listeners can be individually started and stopped at runtime via the API
+    without restarting the whole application.
+    """
+
+    def __init__(self):
+        self._lock = _threading.Lock()
+        # Each entry: {'server': ThreadedTCPServer|None, 'thread': Thread|None, 'enabled': bool}
+        self._listeners: dict = {}
+
+    def register(self, name: str, host: str, port: int,
+                 handler_cls, ingest_service, auto_start: bool = True):
+        """Register a listener and optionally start it immediately."""
+        with self._lock:
+            self._listeners[name] = {
+                'host': host,
+                'port': port,
+                'handler_cls': handler_cls,
+                'ingest_service': ingest_service,
+                'server': None,
+                'thread': None,
+                'enabled': False,
+            }
+        if auto_start:
+            self.start(name)
+
+    def start(self, name: str) -> bool:
+        """Start a named listener. Returns True if started, False if already running."""
+        with self._lock:
+            cfg = self._listeners.get(name)
+            if cfg is None:
+                logger.error("[ListenerManager] Unknown listener: %s", name)
+                return False
+            if cfg['server'] is not None:
+                logger.info("[ListenerManager] %s already running", name)
+                return False
+
+        # Build and bind the server outside the lock (may block briefly on bind)
+        c = self._listeners[name]
+        try:
+            server = ThreadedTCPServer(
+                (c['host'], c['port']),
+                c['handler_cls'],
+                ingest_service=c['ingest_service'],
+            )
+        except OSError as exc:
+            logger.error(
+                "[ListenerManager] Cannot bind %s on %s:%d — %s",
+                name, c['host'], c['port'], exc,
+            )
+            return False
+
+        thread = _threading.Thread(
+            target=server.serve_forever,
+            daemon=True,
+            name=f"{name}-Listener",
+        )
+
+        with self._lock:
+            self._listeners[name]['server'] = server
+            self._listeners[name]['thread'] = thread
+            self._listeners[name]['enabled'] = True
+
+        thread.start()
+        logger.info(
+            "[ListenerManager] %s started on %s:%d",
+            name, c['host'], c['port'],
+        )
+        return True
+
+    def stop(self, name: str) -> bool:
+        """Stop a named listener. Returns True if stopped, False if not running."""
+        with self._lock:
+            cfg = self._listeners.get(name)
+            if cfg is None or cfg['server'] is None:
+                logger.info("[ListenerManager] %s is not running", name)
+                return False
+            server = cfg['server']
+            self._listeners[name]['server'] = None
+            self._listeners[name]['thread'] = None
+            self._listeners[name]['enabled'] = False
+
+        # shutdown() blocks until all in-flight requests finish — run in a thread
+        # so the HTTP response returns immediately
+        _threading.Thread(
+            target=server.shutdown,
+            daemon=True,
+            name=f"{name}-Shutdown",
+        ).start()
+        logger.info("[ListenerManager] %s stopped", name)
+        return True
+
+    def status(self, name: str) -> dict:
+        """Return status dict for a listener."""
+        with self._lock:
+            cfg = self._listeners.get(name)
+            if cfg is None:
+                return {'running': False, 'port': None}
+            return {
+                'running': cfg['server'] is not None,
+                'enabled': cfg['enabled'],
+                'host': cfg['host'],
+                'port': cfg['port'],
+            }
+
+    def all_statuses(self) -> dict:
+        with self._lock:
+            return {
+                name: {
+                    'running': cfg['server'] is not None,
+                    'enabled': cfg['enabled'],
+                    'host': cfg['host'],
+                    'port': cfg['port'],
+                }
+                for name, cfg in self._listeners.items()
+            }
+
+
+# ---------------------------------------------------------------------------
+# Listener Startup Functions (kept for compatibility; now delegate to manager)
 # ---------------------------------------------------------------------------
 def start_mllp_listener(host, port, ingest_service):
     """Start MLLP listener in background thread"""
@@ -517,36 +640,43 @@ def create_app() -> Flask:
         not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
     )
 
+    listener_manager = ListenerManager()
+
     if should_start_background_listeners:
-        # Start MLLP Listener in background thread
         mllp_host = app.config.get('MLLP_HOST', '0.0.0.0')
         mllp_port = app.config.get('MLLP_PORT', 6000)
-        mllp_thread = _threading.Thread(
-            target=start_mllp_listener,
-            args=(mllp_host, mllp_port, ingest_service),
-            daemon=True,
-            name="MLLP-Listener"
+        listener_manager.register(
+            'mllp', mllp_host, mllp_port, HL7MLLPHandler,
+            ingest_service, auto_start=True,
         )
-        mllp_thread.start()
-        logger.info(f'MLLP listener thread started on {mllp_host}:{mllp_port}')
+        logger.info(f'MLLP listener started on {mllp_host}:{mllp_port}')
 
-        # Start ASTM Listener in background thread
         astm_host = app.config.get('ASTM_HOST', '0.0.0.0')
         astm_port = app.config.get('ASTM_PORT', 7000)
-        astm_thread = _threading.Thread(
-            target=start_astm_listener,
-            args=(astm_host, astm_port, ingest_service),
-            daemon=True,
-            name="ASTM-Listener"
+        listener_manager.register(
+            'astm', astm_host, astm_port, ASTMHandler,
+            ingest_service, auto_start=True,
         )
-        astm_thread.start()
-        logger.info(f'ASTM listener thread started on {astm_host}:{astm_port}')
+        logger.info(f'ASTM listener started on {astm_host}:{astm_port}')
     else:
         logger.info('Skipping background listener startup in the Flask reloader parent process')
+        mllp_host = app.config.get('MLLP_HOST', '0.0.0.0')
+        mllp_port = app.config.get('MLLP_PORT', 6000)
+        astm_host = app.config.get('ASTM_HOST', '0.0.0.0')
+        astm_port = app.config.get('ASTM_PORT', 7000)
+        listener_manager.register(
+            'mllp', mllp_host, mllp_port, HL7MLLPHandler,
+            ingest_service, auto_start=False,
+        )
+        listener_manager.register(
+            'astm', astm_host, astm_port, ASTMHandler,
+            ingest_service, auto_start=False,
+        )
 
     app.extensions['repository'] = repository
     app.extensions['delivery_service'] = delivery_service
     app.extensions['mapping_service'] = mapping_service
+    app.extensions['listener_manager'] = listener_manager
 
     app.register_blueprint(create_ingest_blueprint(ingest_service))
     app.register_blueprint(create_results_blueprint(repository))
@@ -704,24 +834,41 @@ def create_app() -> Flask:
 
     @app.route('/api/listener-status', methods=['GET'])
     def listener_status():
-        def _check(port):
-            try:
-                with socket.create_connection(('127.0.0.1', int(port)), timeout=0.5):
-                    return True
-            except OSError:
-                return False
+        mgr: ListenerManager = app.extensions['listener_manager']
+        statuses = mgr.all_statuses()
+
+        def _port_for(name, fallback):
+            s = statuses.get(name, {})
+            return s.get('port') or app.config.get(fallback)
 
         return jsonify({
-            'http': {'port': app.config.get('PORT', 5001), 'listening': True},
-            'mllp': {
-                'port': app.config.get('MLLP_PORT', 6000),
-                'listening': _check(app.config.get('MLLP_PORT', 6000)),
-            },
-            'astm': {
-                'port': app.config.get('ASTM_PORT', 7000),
-                'listening': _check(app.config.get('ASTM_PORT', 7000)),
-            },
+            'http':  {'port': app.config.get('PORT', 5001), 'running': True},
+            'mllp': {**statuses.get('mllp', {}), 'port': _port_for('mllp', 'MLLP_PORT')},
+            'astm': {**statuses.get('astm', {}), 'port': _port_for('astm', 'ASTM_PORT')},
         })
+
+    @app.route('/api/listener/<name>/start', methods=['POST'])
+    def listener_start(name: str):
+        if name not in ('mllp', 'astm'):
+            return jsonify({'success': False, 'error': 'Unknown listener'}), 400
+        mgr: ListenerManager = app.extensions['listener_manager']
+        started = mgr.start(name)
+        status = mgr.status(name)
+        if started:
+            logger.info("[API] Listener %s started via API", name.upper())
+            return jsonify({'success': True, 'running': status['running'], 'port': status['port']})
+        if status['running']:
+            return jsonify({'success': False, 'error': f'{name.upper()} is already running', 'running': True})
+        return jsonify({'success': False, 'error': f'Failed to start {name.upper()} — check logs for bind errors', 'running': False}), 500
+
+    @app.route('/api/listener/<name>/stop', methods=['POST'])
+    def listener_stop(name: str):
+        if name not in ('mllp', 'astm'):
+            return jsonify({'success': False, 'error': 'Unknown listener'}), 400
+        mgr: ListenerManager = app.extensions['listener_manager']
+        stopped = mgr.stop(name)
+        logger.info("[API] Listener %s stopped via API", name.upper())
+        return jsonify({'success': True, 'stopped': stopped, 'running': False})
 
     @app.errorhandler(500)
     def internal_error(error):

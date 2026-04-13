@@ -602,6 +602,28 @@
             background: #ffedd5;
         }
 
+        .array-group-footer td {
+            background: #f0f9ff;
+            border-bottom: 2px dashed #bae6fd;
+            padding: 0.4rem 0.75rem;
+        }
+        .array-group-add-btn {
+            font-size: 0.8rem;
+            padding: 0.3rem 0.85rem;
+            color: #0369a1;
+            background: #e0f2fe;
+            border: 1px solid #bae6fd;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .array-group-add-btn:hover {
+            background: #bae6fd;
+        }
+
         .target-path-wrap {
             position: relative;
             transition: margin-left 0.15s;
@@ -1082,6 +1104,7 @@
             });
             $(document).on('input', '.target-path', function() {
                 refreshResolvedPathHints();
+                injectArrayGroupControls();
             });
         });
 
@@ -1936,6 +1959,7 @@
                     level: explicitIndent !== null ? explicitIndent : inferredIndent
                 });
             });
+            injectArrayGroupControls();
             refreshFieldHighlights();
         }
 
@@ -1943,6 +1967,111 @@
         function addMappingRule() {
             addRuleRow({source_path: '', target_path: '', default_value: '', transform: null});
         }
+
+        // ── Array group controls ─────────────────────────────────────────────────
+
+        function getArrayInfo(targetPath) {
+            if (!targetPath) return null;
+            const match = targetPath.match(/^(.*?)\[(\d+)\]/);
+            if (!match) return null;
+            return { prefix: match[1], index: parseInt(match[2], 10) };
+        }
+
+        function injectArrayGroupControls() {
+            // Remove existing footers first
+            $('#rulesTableBody .array-group-footer').remove();
+
+            const groupLastRow = {}; // prefix -> last jQuery row element
+
+            $('#rulesTableBody tr[data-rule-row]').each(function() {
+                const row = $(this);
+                const targetPath = row.find('.target-path').val().trim();
+                const info = getArrayInfo(targetPath);
+                if (info) {
+                    row.attr('data-array-prefix', info.prefix);
+                    row.attr('data-array-index', info.index);
+                    groupLastRow[info.prefix] = row;
+                } else {
+                    row.removeAttr('data-array-prefix');
+                    row.removeAttr('data-array-index');
+                }
+            });
+
+            Object.entries(groupLastRow).forEach(function([prefix, lastRow]) {
+                const displayName = prefix.split('.').pop().replace(/\[.*$/, '') || prefix;
+                const escapedPrefix = escapeHtml(prefix);
+                lastRow.after(`
+                    <tr class="array-group-footer" data-for-prefix="${escapedPrefix}">
+                        <td colspan="5">
+                            <button type="button" class="array-group-add-btn"
+                                    data-array-prefix="${escapedPrefix}"
+                                    onclick="addArrayItemGroup(this.dataset.arrayPrefix)">
+                                <i class="fas fa-plus"></i> Add another <strong>${escapeHtml(displayName)}</strong> item
+                            </button>
+                        </td>
+                    </tr>
+                `);
+            });
+        }
+
+        function addArrayItemGroup(prefix) {
+            const rows = $('#rulesTableBody tr[data-rule-row]').filter(function() {
+                return $(this).attr('data-array-prefix') === prefix;
+            });
+            if (!rows.length) {
+                showToast('No rows found for this array group', 'error');
+                return;
+            }
+
+            // Find the maximum index currently in use
+            let maxIdx = -1;
+            rows.each(function() {
+                const idx = parseInt($(this).attr('data-array-index') || '0', 10);
+                if (idx > maxIdx) maxIdx = idx;
+            });
+
+            const newIdx = maxIdx + 1;
+
+            // Clone only the rows that have the max index
+            const rowsToClone = rows.filter(function() {
+                return parseInt($(this).attr('data-array-index') || '0', 10) === maxIdx;
+            });
+
+            // Find the footer row for this prefix
+            const footer = $('#rulesTableBody .array-group-footer').filter(function() {
+                return $(this).attr('data-for-prefix') === prefix;
+            });
+
+            rowsToClone.each(function() {
+                const clonedRow = $(this).clone();
+
+                // Rewrite target path index
+                const oldPath = clonedRow.find('.target-path').val();
+                const escapedPrefixRe = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const newPath = oldPath.replace(
+                    new RegExp(escapedPrefixRe + '\\[' + maxIdx + '\\]'),
+                    `${prefix}[${newIdx}]`
+                );
+                clonedRow.find('.target-path').val(newPath);
+                clonedRow.find('.resolved-target-path').text('');
+
+                // Clear source path and mark as awaiting
+                clonedRow.find('.source-path').val('');
+                clonedRow.attr('data-array-index', newIdx);
+                clonedRow.attr('data-await-source', 'true');
+                clonedRow.addClass('pending-source-row');
+
+                footer.before(clonedRow);
+            });
+
+            // Re-inject to update the footer position/index
+            injectArrayGroupControls();
+            refreshResolvedPathHints();
+            refreshFieldHighlights();
+            showToast(`Added ${prefix}[${newIdx}] item group`, 'success');
+        }
+
+        // ── End array group controls ─────────────────────────────────────────────
 
         function addRuleRow(rule) {
             const tbody = $('#rulesTableBody');
@@ -1964,7 +2093,7 @@
             const indentLevel = Number.isInteger(rule.indent_level) ? Math.max(0, rule.indent_level) : 0;
 
             const row = $(`
-                <tr>
+                <tr data-rule-row="true">
                     <td>
                         <input type="text" class="source-path" value="${rule.source_path || ''}" 
                                placeholder="e.g., patient.id or observations[*].value">
@@ -2020,7 +2149,8 @@
             const tbody = $('#rulesTableBody');
             $(btn).closest('tr').remove();
             
-            if (tbody.find('tr').length === 0) {
+            if (tbody.find('tr[data-rule-row]').length === 0) {
+                tbody.empty();
                 tbody.append(`
                     <tr>
                         <td colspan="5">
@@ -2032,6 +2162,8 @@
                         </td>
                     </tr>
                 `);
+            } else {
+                injectArrayGroupControls();
             }
             refreshResolvedPathHints();
             refreshFieldHighlights();
@@ -2128,6 +2260,7 @@
             $('#rulesTableBody tr').each(function() {
                 const row = $(this);
                 if (row.find('.empty-state').length > 0) return;
+                if (row.find('.source-path').length === 0) return; // skip array-group footer rows
 
                 const sourcePath = row.find('.source-path').val().trim();
                 const targetPath = row.find('.target-path').val().trim();
